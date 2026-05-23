@@ -70,25 +70,84 @@ body {
   margin-bottom: 1.2rem;
 }
 
-/* ===== Confirm screen ===== */
-.confirm-card { max-width: 380px; }
-.sticker-preview { margin: 1.5rem auto; }
-.sticker-photo-lg {
-  width: 120px; height: 120px; border-radius: 12px;
-  object-fit: contain;
-  border: 4px solid var(--gold);
-  box-shadow: 0 0 20px rgba(245,197,24,0.5);
+/* ===== Confirm screen (tela cheia do celular, figurinha em destaque) ===== */
+.confirm-screen {
+  min-height: 100vh;
+  min-height: 100dvh; /* viewport dinâmico: desconta a barra do navegador no mobile */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 1rem 1.5rem;
+  box-sizing: border-box;
 }
-.sticker-photo-placeholder-lg {
-  width: 120px; height: 120px; border-radius: 12px;
+.confirm-top { padding: 0.25rem 0 0; }
+.confirm-top .panini-logo { margin-bottom: 0; }
+
+/* Área central que cresce e centraliza a figurinha */
+.confirm-hero {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A figurinha em si — cartão estilo Panini */
+.fig-sticker {
+  position: relative;
+  overflow: hidden;
+  width: min(82vw, 340px);
+  background: linear-gradient(160deg, #fffbe6, #ffe6a0);
+  border: 5px solid var(--gold);
+  border-radius: 20px;
+  box-shadow: 0 14px 36px rgba(0,0,0,0.20), 0 0 26px rgba(245,197,24,0.5);
+  padding: 16px 16px 20px;
+  animation: stickerIn 0.45s ease-out;
+}
+.fig-sticker-photo,
+.fig-sticker-placeholder {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fig-sticker-photo { object-fit: contain; }
+.fig-sticker-placeholder {
   background: linear-gradient(135deg, var(--green), var(--blue));
-  color: #fff; font-size: 3rem; display: flex;
-  align-items: center; justify-content: center;
-  margin: 0 auto;
-  border: 4px solid var(--gold);
+  color: #fff;
+  font-size: 5rem;
+  font-weight: 800;
 }
-.sticker-name-lg { font-size: 1.3rem; font-weight: 700; margin-top: 0.75rem; color: var(--blue); }
-.confirm-question { font-size: 1.1rem; margin: 1rem 0 1.5rem; }
+.fig-sticker-name {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--blue);
+  line-height: 1.15;
+}
+/* Brilho passando por cima da figurinha */
+.fig-sticker-shine {
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: skewX(-20deg);
+  animation: figShine 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes figShine {
+  0%, 55% { left: -50%; }
+  100%    { left: 150%; }
+}
+
+.confirm-bottom { width: 100%; max-width: 380px; }
+.confirm-question { font-size: 1.25rem; margin: 1.25rem 0 1rem; }
 .confirm-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 
 /* ===== Not-me / info screen ===== */

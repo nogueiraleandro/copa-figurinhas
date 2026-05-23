@@ -7,20 +7,26 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="container center">
-  <div class="card confirm-card">
+<div class="confirm-screen">
+  <div class="confirm-top">
     <div class="panini-logo">⚽ Copa Figurinhas 2026</div>
-    <h2>Bem-vindo!</h2>
-    <div class="sticker-preview">
+  </div>
+
+  <div class="confirm-hero">
+    <div class="fig-sticker">
+      <div class="fig-sticker-shine"></div>
       {{if .Sticker.PhotoPath}}
-      <img src="{{.Sticker.PhotoPath}}" alt="{{.Sticker.Name}}" class="sticker-photo-lg">
+      <img src="{{.Sticker.PhotoPath}}" alt="{{.Sticker.Name}}" class="fig-sticker-photo">
       {{else}}
-      <div class="sticker-photo-placeholder-lg">{{slice .Sticker.Name 0 1}}</div>
+      <div class="fig-sticker-placeholder">{{slice .Sticker.Name 0 1}}</div>
       {{end}}
-      <div class="sticker-name-lg">
+      <div class="fig-sticker-name">
         {{if .Sticker.Nickname}}{{.Sticker.Nickname}}{{else}}{{.Sticker.Name}}{{end}}
       </div>
     </div>
+  </div>
+
+  <div class="confirm-bottom">
     <p class="confirm-question">Você é <strong>{{.Sticker.Name}}</strong>?</p>
     <div class="confirm-actions">
       <form method="POST" action="/s/{{.Sticker.Token}}/confirm">
