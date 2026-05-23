@@ -75,7 +75,7 @@ body {
 .sticker-preview { margin: 1.5rem auto; }
 .sticker-photo-lg {
   width: 120px; height: 120px; border-radius: 12px;
-  object-fit: cover;
+  object-fit: contain;
   border: 4px solid var(--gold);
   box-shadow: 0 0 20px rgba(245,197,24,0.5);
 }
@@ -163,7 +163,7 @@ body {
 .sticker-photo {
   position: absolute; top: 0; left: 0;
   width: 100%; height: 75%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .sticker-initials {
@@ -246,7 +246,7 @@ body {
 .reveal-photo {
   position: absolute; top: 0; left: 0;
   width: 100%; height: 75%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .reveal-initials {
