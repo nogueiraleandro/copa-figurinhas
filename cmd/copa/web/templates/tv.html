@@ -85,7 +85,7 @@
   <div class="tv-info">
     <!-- Countdown -->
     <div class="tv-countdown-block">
-      <div class="tv-section-title">⏱ Apito inicial</div>
+      <div class="tv-section-title">⏱ Apito final</div>
       {{if .KickoffAt}}
       <div id="countdown" class="countdown-display">--:--:--</div>
       <div class="kickoff-time">{{.KickoffAt}}</div>
@@ -97,15 +97,16 @@
     <!-- How to join -->
     <div class="tv-howto-block">
       <div class="tv-section-title">📱 Como participar</div>
+      <div class="tv-steps">
+        <div class="tv-step">1. Aponte a câmera para o QR no verso da SUA figurinha</div>
+        <div class="tv-step">2. Confirme que é você</div>
+        <div class="tv-step">3. Encontre os outros e escaneie as figurinhas deles</div>
+        <div class="tv-step">4. Complete o álbum — ou tenha mais figurinhas no apito final!</div>
+      </div>
       {{if .QRBase64}}
+      <div class="tv-howto-access">Abrir o jogo no navegador:</div>
       <img src="data:image/png;base64,{{.QRBase64}}" alt="QR Code" class="tv-qr">
       {{end}}
-      <div class="tv-steps">
-        <div class="tv-step">1. Escaneie o QR acima</div>
-        <div class="tv-step">2. Confirme seu nome</div>
-        <div class="tv-step">3. Escaneie as figurinhas dos outros</div>
-        <div class="tv-step">4. Quem completar primeiro vence!</div>
-      </div>
       <div class="tv-url">{{.BaseURL}}</div>
     </div>
   </div>

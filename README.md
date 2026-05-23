@@ -3,7 +3,7 @@
 Álbum de figurinhas virtual para um evento local (Copa 2026, com família e amigos).
 Cada convidado recebe uma figurinha física com a própria foto e um **QR code**. Escanear
 os QRs dos outros monta um **álbum virtual** em tempo real, com **telão** de ranking ao vivo
-e **tela de campeão** no apito inicial.
+e **tela de campeão** no apito final.
 
 Roda **100% local** num notebook Windows, **sem internet** — um único binário (`copa.exe`)
 com banco SQLite embutido.

@@ -396,16 +396,22 @@ body {
 }
 
 .rank-pos { font-size: 1.2rem; font-weight: 900; color: var(--gold); min-width: 32px; }
-.rank-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.2); }
+.rank-avatar {
+  width: 76px; height: 76px; border-radius: 50%;
+  object-fit: cover; object-position: center 25%;
+  border: 3px solid var(--gold);
+  box-shadow: 0 0 12px rgba(0,0,0,0.25);
+}
 .rank-avatar-placeholder {
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 76px; height: 76px; border-radius: 50%;
   background: linear-gradient(135deg, var(--green), var(--blue));
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 1.1rem;
+  font-weight: 800; font-size: 1.9rem;
+  border: 3px solid var(--gold);
 }
 
 .rank-info { flex: 1; }
-.rank-name { font-weight: 700; font-size: 1rem; }
+.rank-name { font-weight: 700; font-size: 1.15rem; }
 .rank-count { font-size: 0.8rem; color: rgba(255,255,255,0.6); }
 .rank-complete-badge { font-size: 0.75rem; color: var(--gold); font-weight: 700; }
 
@@ -429,6 +435,7 @@ body {
 .tv-steps { text-align: left; margin: 0.75rem 0; }
 .tv-step { font-size: 0.85rem; padding: 0.3rem 0; color: rgba(255,255,255,0.8); border-bottom: 1px solid rgba(255,255,255,0.08); }
 .tv-step:last-child { border-bottom: none; }
+.tv-howto-access { font-size: 0.78rem; color: rgba(255,255,255,0.6); margin-top: 0.5rem; }
 .tv-url { font-size: 0.75rem; color: var(--gold); font-family: monospace; margin-top: 0.5rem; word-break: break-all; }
 
 /* Complete alert overlay */

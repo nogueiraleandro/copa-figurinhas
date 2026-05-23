@@ -35,7 +35,7 @@ copa.exe                  ← binário único, ~18 MB
 2. Escaneia o próprio QR → confirma identidade na tela.
 3. Escaneia figurinhas de outros → álbum virtual cresce em tempo real.
 4. Telão (projetor) exibe ranking ao vivo.
-5. No apito inicial do Brasil → ranking congela, campeão é anunciado.
+5. No apito final → ranking congela, campeão é anunciado.
 
 ---
 
