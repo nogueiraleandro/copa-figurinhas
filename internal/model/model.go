@@ -5,7 +5,7 @@ import "time"
 // Participant is a guest / sticker in the album.
 type Participant struct {
 	ID              int64
-	Token           string    // random hex, used in QR URLs
+	Token           string // random hex, used in QR URLs
 	Name            string
 	Nickname        string
 	PhotoPath       string
@@ -35,6 +35,10 @@ type Setting struct {
 	KickoffAt         *time.Time
 	RosterLocked      bool
 	AdminPasswordHash string // bcrypt
+	GeminiAPIKey      string
+	AIModel           string
+	AIPrompt          string
+	AIReferencePath   string
 }
 
 // RankEntry is used for ranking queries.

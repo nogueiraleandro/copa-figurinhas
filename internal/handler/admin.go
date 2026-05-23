@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"archive/zip"
+	"context"
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"copa/internal/gemini"
 	"copa/internal/model"
 	"copa/internal/qr"
 	"copa/internal/service"
@@ -26,6 +31,8 @@ import (
 )
 
 const adminCookieName = "copa_admin"
+const defaultAIModel = "gemini-2.5-flash-image"
+const defaultAIPrompt = "Transforme a foto em uma figurinha no mesmo estilo da figurinha modelo. Preserve a identidade, rosto, expressao e caracteristicas principais da pessoa. Use composicao limpa, aparencia de figurinha colecionavel, cores vivas, acabamento profissional e fundo compatível com o modelo."
 
 // AdminHandler handles /admin routes.
 type AdminHandler struct {
@@ -93,6 +100,8 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/admin/dashboard":
 		h.handleDashboard(w, r)
+	case path == "/admin/preflight":
+		h.handlePreflight(w, r)
 	case path == "/admin/participants":
 		h.handleParticipants(w, r)
 	case path == "/admin/participants/new":
@@ -113,6 +122,8 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleLockRoster(w, r)
 	case path == "/admin/backup":
 		h.handleBackup(w, r)
+	case path == "/admin/backup/full":
+		h.handleFullBackup(w, r)
 	case path == "/admin/export":
 		h.handleExport(w, r)
 	case path == "/admin/transfer":
@@ -194,9 +205,18 @@ func (h *AdminHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	participants, _ := h.store.ListParticipants()
-	ranking, _ := h.store.GetRanking()
 	setting, _ := h.store.GetSetting()
+	var ranking []*model.RankEntry
+	finalized := setting.KickoffAt != nil && !time.Now().Before(*setting.KickoffAt)
+	if finalized {
+		ranking, _ = h.store.EnsureFinalSnapshot(*setting.KickoffAt)
+	} else {
+		ranking, _ = h.store.GetRanking()
+	}
 	total, _ := h.store.CountActiveParticipants()
+	if finalized && len(ranking) > 0 {
+		total = ranking[0].Total
+	}
 
 	// Quem ainda nao entrou: ativos sem device reivindicado.
 	var unregistered []*model.Participant
@@ -222,25 +242,128 @@ func (h *AdminHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *AdminHandler) handlePreflight(w http.ResponseWriter, r *http.Request) {
+	participants, _ := h.store.ListParticipants()
+	setting, _ := h.store.GetSetting()
+	total, _ := h.store.CountActiveParticipants()
+
+	registered := 0
+	missingPhotos := 0
+	var unregistered []*model.Participant
+	for _, p := range participants {
+		if !p.Active {
+			continue
+		}
+		if p.ClaimedDeviceID != nil {
+			registered++
+		} else {
+			unregistered = append(unregistered, p)
+		}
+		if p.PhotoPath == "" {
+			missingPhotos++
+		}
+	}
+
+	port := listenPort(h.listenAddr)
+	ips := localIPv4s()
+	host := hostOf(setting.BaseURL)
+	baseURLMatchesLAN := false
+	for _, ip := range ips {
+		if host == ip {
+			baseURLMatchesLAN = true
+			break
+		}
+	}
+
+	type ipEntry struct {
+		IP       string
+		URL      string
+		QRBase64 string
+	}
+	var entries []ipEntry
+	for _, ip := range ips {
+		u := fmt.Sprintf("http://%s:%s", ip, port)
+		b64, _ := generateQRBase64(u)
+		entries = append(entries, ipEntry{IP: ip, URL: u, QRBase64: b64})
+	}
+
+	latestBackup, latestBackupAt := latestBackupInfo(h.dataDir)
+	type preflightCheck struct {
+		Name   string
+		Detail string
+		OK     bool
+	}
+	checks := []preflightCheck{
+		{
+			Name:   "URL base acessivel pelos celulares",
+			Detail: fmt.Sprintf("Configurado: %s", setting.BaseURL),
+			OK:     setting.BaseURL != "" && baseURLMatchesLAN,
+		},
+		{
+			Name:   "Participantes ativos cadastrados",
+			Detail: fmt.Sprintf("%d participantes ativos", total),
+			OK:     total > 0,
+		},
+		{
+			Name:   "Elenco travado",
+			Detail: "Trave perto do apito para fixar a meta do album.",
+			OK:     setting.RosterLocked,
+		},
+		{
+			Name:   "Horario do apito configurado",
+			Detail: "Usado para congelar o resultado oficial.",
+			OK:     setting.KickoffAt != nil,
+		},
+		{
+			Name:   "Backup recente disponivel",
+			Detail: latestBackup,
+			OK:     latestBackup != "",
+		},
+	}
+	ready := 0
+	for _, c := range checks {
+		if c.OK {
+			ready++
+		}
+	}
+
+	h.tmpl.Render(w, "admin_preflight.html", map[string]interface{}{
+		"Setting":           setting,
+		"Checks":            checks,
+		"Ready":             ready,
+		"TotalChecks":       len(checks),
+		"Participants":      participants,
+		"Total":             total,
+		"Registered":        registered,
+		"Unregistered":      unregistered,
+		"MissingPhotos":     missingPhotos,
+		"IPs":               entries,
+		"BaseURL":           setting.BaseURL,
+		"BaseURLHost":       host,
+		"BaseURLMatchesLAN": baseURLMatchesLAN,
+		"LatestBackup":      latestBackup,
+		"LatestBackupAt":    latestBackupAt,
+	})
+}
+
 func (h *AdminHandler) handleParticipants(w http.ResponseWriter, r *http.Request) {
 	participants, _ := h.store.ListParticipants()
 	setting, _ := h.store.GetSetting()
 	h.tmpl.Render(w, "admin_participants.html", map[string]interface{}{
 		"Participants": participants,
 		"BaseURL":      setting.BaseURL,
+		"AIWarn":       r.URL.Query().Get("aiwarn") == "1",
 	})
 }
 
 func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{"IsNew": true})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "", false))
 		return
 	}
 
 	if setting, _ := h.store.GetSetting(); setting.RosterLocked {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{
-			"IsNew": true, "Error": "Elenco travado — destrave nas configurações para adicionar participantes.",
-		})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Elenco travado — destrave nas configurações para adicionar participantes.", false))
 		return
 	}
 
@@ -248,30 +371,40 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 	name := strings.TrimSpace(r.FormValue("name"))
 	nickname := strings.TrimSpace(r.FormValue("nickname"))
 	if name == "" {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{
-			"IsNew": true, "Error": "Nome obrigatório",
-		})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Nome obrigatório", false))
 		return
 	}
 
 	photoPath := ""
+	aiWarn := false
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
 		defer file.Close()
 		if data, rerr := io.ReadAll(file); rerr == nil {
-			photoPath = h.saveImage(data, header.Filename)
+			filename := header.Filename
+			if r.FormValue("use_ai") == "on" && h.aiConfigured() {
+				photoMime := header.Header.Get("Content-Type")
+				if !strings.HasPrefix(photoMime, "image/") {
+					photoMime = http.DetectContentType(data)
+				}
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime); ok {
+					data = styled
+					filename = "gemini" + extForMime(styledMime)
+				} else {
+					aiWarn = true
+				}
+			}
+			photoPath = h.saveImage(data, filename)
 		}
 	}
 
 	_, err := h.store.CreateParticipant(name, nickname, photoPath)
 	if err != nil {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{
-			"IsNew": true, "Error": "Erro ao criar: " + err.Error(),
-		})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarn))
 		return
 	}
 
 	h.broadcastRanking()
-	http.Redirect(w, r, "/admin/participants", http.StatusSeeOther)
+	redirectWithAIWarn(w, r, "/admin/participants", aiWarn)
 }
 
 func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Request) {
@@ -289,10 +422,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	}
 
 	if r.Method == http.MethodGet {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{
-			"IsNew":       false,
-			"Participant": p,
-		})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "", r.URL.Query().Get("aiwarn") == "1"))
 		return
 	}
 
@@ -301,24 +431,36 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	p.Nickname = strings.TrimSpace(r.FormValue("nickname"))
 	p.Active = r.FormValue("active") == "on"
 
+	aiWarn := false
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
 		defer file.Close()
 		if data, rerr := io.ReadAll(file); rerr == nil {
-			if pp := h.saveImage(data, header.Filename); pp != "" {
+			filename := header.Filename
+			if r.FormValue("use_ai") == "on" && h.aiConfigured() {
+				photoMime := header.Header.Get("Content-Type")
+				if !strings.HasPrefix(photoMime, "image/") {
+					photoMime = http.DetectContentType(data)
+				}
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime); ok {
+					data = styled
+					filename = "gemini" + extForMime(styledMime)
+				} else {
+					aiWarn = true
+				}
+			}
+			if pp := h.saveImage(data, filename); pp != "" {
 				p.PhotoPath = pp
 			}
 		}
 	}
 
 	if err := h.store.UpdateParticipant(p); err != nil {
-		h.tmpl.Render(w, "admin_participant_form.html", map[string]interface{}{
-			"IsNew": false, "Participant": p, "Error": "Erro ao atualizar: " + err.Error(),
-		})
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "Erro ao atualizar: "+err.Error(), aiWarn))
 		return
 	}
 
 	h.broadcastRanking()
-	http.Redirect(w, r, "/admin/participants", http.StatusSeeOther)
+	redirectWithAIWarn(w, r, "/admin/participants", aiWarn)
 }
 
 func (h *AdminHandler) handleDeleteParticipant(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +482,88 @@ func (h *AdminHandler) handleDeleteParticipant(w http.ResponseWriter, r *http.Re
 
 	h.broadcastRanking()
 	http.Redirect(w, r, "/admin/participants", http.StatusSeeOther)
+}
+
+func (h *AdminHandler) participantFormData(isNew bool, p *model.Participant, errorMsg string, aiWarn bool) map[string]interface{} {
+	setting, _ := h.store.GetSetting()
+	return map[string]interface{}{
+		"IsNew":           isNew,
+		"Participant":     p,
+		"Error":           errorMsg,
+		"AIWarn":          aiWarn,
+		"AIEnabled":       strings.TrimSpace(setting.GeminiAPIKey) != "",
+		"AIDefaultPrompt": defaultAIPrompt,
+	}
+}
+
+func (h *AdminHandler) aiConfigured() bool {
+	setting, err := h.store.GetSetting()
+	return err == nil && strings.TrimSpace(setting.GeminiAPIKey) != ""
+}
+
+func (h *AdminHandler) styleWithAI(photo []byte, photoMime string) ([]byte, string, bool) {
+	setting, err := h.store.GetSetting()
+	if err != nil || strings.TrimSpace(setting.GeminiAPIKey) == "" {
+		return nil, "", false
+	}
+	model := strings.TrimSpace(setting.AIModel)
+	if model == "" {
+		model = defaultAIModel
+	}
+	prompt := strings.TrimSpace(setting.AIPrompt)
+	if prompt == "" {
+		prompt = defaultAIPrompt
+	}
+	ref, refMime := h.loadAIReference(setting.AIReferencePath)
+	client := &gemini.Client{
+		APIKey: setting.GeminiAPIKey,
+		Model:  model,
+		HTTP:   &http.Client{Timeout: 60 * time.Second},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	defer cancel()
+	out, outMime, err := client.StyleImage(ctx, photo, photoMime, ref, refMime, prompt)
+	if err != nil {
+		log.Printf("gemini image generation failed: %v", err)
+		return nil, "", false
+	}
+	return out, outMime, true
+}
+
+func (h *AdminHandler) loadAIReference(webPath string) ([]byte, string) {
+	webPath = strings.TrimSpace(webPath)
+	if webPath == "" || !strings.HasPrefix(webPath, "/uploads/") {
+		return nil, ""
+	}
+	rel := strings.TrimPrefix(webPath, "/uploads/")
+	clean := filepath.Clean(rel)
+	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return nil, ""
+	}
+	data, err := os.ReadFile(filepath.Join(h.uploadsDir, clean))
+	if err != nil {
+		log.Printf("ai reference not readable: %v", err)
+		return nil, ""
+	}
+	return data, http.DetectContentType(data)
+}
+
+func extForMime(mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".jpg"
+	}
+}
+
+func redirectWithAIWarn(w http.ResponseWriter, r *http.Request, target string, aiWarn bool) {
+	if aiWarn {
+		target += "?aiwarn=1"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // saveImage processa (redimensiona/comprime) e grava a imagem em uploads/.
@@ -498,14 +722,18 @@ func (h *AdminHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
 			kickoffStr = setting.KickoffAt.Local().Format("2006-01-02T15:04")
 		}
 		h.tmpl.Render(w, "admin_settings.html", map[string]interface{}{
-			"Setting":   setting,
-			"KickoffAt": kickoffStr,
-			"Saved":     r.URL.Query().Get("saved") == "1",
+			"Setting":         setting,
+			"KickoffAt":       kickoffStr,
+			"Saved":           r.URL.Query().Get("saved") == "1",
+			"AIKeyConfigured": strings.TrimSpace(setting.GeminiAPIKey) != "",
+			"AIDefaultPrompt": defaultAIPrompt,
 		})
 		return
 	}
 
-	r.ParseForm()
+	if err := r.ParseMultipartForm(20 << 20); err != nil {
+		r.ParseForm()
+	}
 	setting.BaseURL = strings.TrimRight(strings.TrimSpace(r.FormValue("base_url")), "/")
 	kickoffStr := r.FormValue("kickoff_at")
 	if kickoffStr != "" {
@@ -525,9 +753,29 @@ func (h *AdminHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if key := strings.TrimSpace(r.FormValue("gemini_api_key")); key != "" {
+		setting.GeminiAPIKey = key
+	}
+	setting.AIModel = strings.TrimSpace(r.FormValue("ai_model"))
+	if setting.AIModel == "" {
+		setting.AIModel = defaultAIModel
+	}
+	setting.AIPrompt = strings.TrimSpace(r.FormValue("ai_prompt"))
+	if file, header, ferr := r.FormFile("ai_reference"); ferr == nil {
+		defer file.Close()
+		if data, rerr := io.ReadAll(file); rerr == nil && len(data) > 0 {
+			if pp := h.saveImage(data, header.Filename); pp != "" {
+				setting.AIReferencePath = pp
+			}
+		}
+	}
+
 	if err := h.store.SaveSetting(setting); err != nil {
 		h.tmpl.Render(w, "admin_settings.html", map[string]interface{}{
-			"Setting": setting, "Error": "Erro ao salvar: " + err.Error(),
+			"Setting":         setting,
+			"Error":           "Erro ao salvar: " + err.Error(),
+			"AIKeyConfigured": strings.TrimSpace(setting.GeminiAPIKey) != "",
+			"AIDefaultPrompt": defaultAIPrompt,
 		})
 		return
 	}
@@ -575,6 +823,110 @@ func (h *AdminHandler) handleBackup(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f) //nolint:errcheck
 }
 
+func (h *AdminHandler) handleFullBackup(w http.ResponseWriter, r *http.Request) {
+	stamp := time.Now().Format("20060102-150405")
+	tmpDB := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-db-%d.db", time.Now().UnixNano()))
+	tmpZip := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-%d.zip", time.Now().UnixNano()))
+	defer os.Remove(tmpDB)
+	defer os.Remove(tmpZip)
+
+	if err := h.store.BackupTo(tmpDB); err != nil {
+		http.Error(w, "Erro ao gerar backup: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	zf, err := os.Create(tmpZip)
+	if err != nil {
+		http.Error(w, "Erro ao criar zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	zw := zip.NewWriter(zf)
+
+	if err := addFileToZip(zw, tmpDB, "data/copa.db"); err != nil {
+		zw.Close() //nolint:errcheck
+		zf.Close() //nolint:errcheck
+		http.Error(w, "Erro ao incluir banco no zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := filepath.WalkDir(h.uploadsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(h.uploadsDir, path)
+		if err != nil {
+			return err
+		}
+		return addFileToZip(zw, path, filepath.ToSlash(filepath.Join("uploads", rel)))
+	}); err != nil {
+		zw.Close() //nolint:errcheck
+		zf.Close() //nolint:errcheck
+		http.Error(w, "Erro ao incluir fotos no zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	setting, _ := h.store.GetSetting()
+	total, _ := h.store.CountActiveParticipants()
+	manifest, err := zw.Create("manifest.txt")
+	if err != nil {
+		zw.Close() //nolint:errcheck
+		zf.Close() //nolint:errcheck
+		http.Error(w, "Erro ao criar manifesto: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(manifest, "Copa de Figurinhas backup completo\n")
+	fmt.Fprintf(manifest, "created_at=%s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(manifest, "base_url=%s\n", setting.BaseURL)
+	fmt.Fprintf(manifest, "active_participants=%d\n", total)
+	fmt.Fprintf(manifest, "includes=data/copa.db, uploads/\n")
+
+	if err := zw.Close(); err != nil {
+		zf.Close() //nolint:errcheck
+		http.Error(w, "Erro ao fechar zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := zf.Close(); err != nil {
+		http.Error(w, "Erro ao salvar zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	f, err := os.Open(tmpZip)
+	if err != nil {
+		http.Error(w, "Erro ao abrir zip: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err == nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="copa-backup-completo-%s.zip"`, stamp))
+	io.Copy(w, f) //nolint:errcheck
+}
+
+func addFileToZip(zw *zip.Writer, srcPath, dstName string) error {
+	info, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = filepath.ToSlash(dstName)
+	header.Method = zip.Deflate
+	dst, err := zw.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	_, err = io.Copy(dst, src)
+	return err
+}
+
 // handleExport baixa o resultado em CSV. Apos o apito, exporta a classificacao
 // congelada (oficial); antes, a classificacao ao vivo.
 func (h *AdminHandler) handleExport(w http.ResponseWriter, r *http.Request) {
@@ -582,7 +934,7 @@ func (h *AdminHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	var ranking []*model.RankEntry
 	frozen := setting.KickoffAt != nil && !time.Now().Before(*setting.KickoffAt)
 	if frozen {
-		ranking, _ = h.store.GetFinalRanking(*setting.KickoffAt)
+		ranking, _ = h.store.EnsureFinalSnapshot(*setting.KickoffAt)
 	} else {
 		ranking, _ = h.store.GetRanking()
 	}
@@ -707,14 +1059,49 @@ func localIPv4s() []string {
 	return out
 }
 
+func listenPort(listenAddr string) string {
+	port := strings.TrimPrefix(listenAddr, ":")
+	if i := strings.LastIndex(listenAddr, ":"); i >= 0 {
+		port = listenAddr[i+1:]
+	}
+	return port
+}
+
+func latestBackupInfo(dataDir string) (string, *time.Time) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return "", nil
+	}
+	var latestName string
+	var latestTime time.Time
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, "copa-backup-") || !strings.HasSuffix(name, ".db") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if latestName == "" || info.ModTime().After(latestTime) {
+			latestName = name
+			latestTime = info.ModTime()
+		}
+	}
+	if latestName == "" {
+		return "", nil
+	}
+	return latestName, &latestTime
+}
+
 func (h *AdminHandler) handleSystem(w http.ResponseWriter, r *http.Request) {
 	setting, _ := h.store.GetSetting()
 
 	// Porta a partir do endereço de escuta (":8080" -> "8080").
-	port := strings.TrimPrefix(h.listenAddr, ":")
-	if i := strings.LastIndex(h.listenAddr, ":"); i >= 0 {
-		port = h.listenAddr[i+1:]
-	}
+	port := listenPort(h.listenAddr)
 
 	ips := localIPv4s()
 

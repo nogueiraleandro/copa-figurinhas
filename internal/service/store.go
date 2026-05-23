@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	idb "copa/internal/db"
@@ -43,10 +44,16 @@ func randomHex(n int) (string, error) {
 // ---- Settings ----
 
 func (s *Store) GetSetting() (model.Setting, error) {
-	row := s.db.QueryRow(`SELECT base_url, kickoff_at, roster_locked, admin_password_hash FROM setting WHERE id=1`)
+	row := s.db.QueryRow(`
+		SELECT base_url, kickoff_at, roster_locked, admin_password_hash,
+		       gemini_api_key, ai_model, ai_prompt, ai_reference_path
+		FROM setting WHERE id=1`)
 	var set model.Setting
 	var kickoffStr sql.NullString
-	if err := row.Scan(&set.BaseURL, &kickoffStr, &set.RosterLocked, &set.AdminPasswordHash); err != nil {
+	if err := row.Scan(
+		&set.BaseURL, &kickoffStr, &set.RosterLocked, &set.AdminPasswordHash,
+		&set.GeminiAPIKey, &set.AIModel, &set.AIPrompt, &set.AIReferencePath,
+	); err != nil {
 		return set, err
 	}
 	if kickoffStr.Valid && kickoffStr.String != "" {
@@ -64,8 +71,13 @@ func (s *Store) SaveSetting(set model.Setting) error {
 		v := idb.TimeToString(*set.KickoffAt)
 		kickoffStr = &v
 	}
-	_, err := s.db.Exec(`UPDATE setting SET base_url=?, kickoff_at=?, roster_locked=?, admin_password_hash=? WHERE id=1`,
-		set.BaseURL, kickoffStr, boolToInt(set.RosterLocked), set.AdminPasswordHash)
+	_, err := s.db.Exec(`
+		UPDATE setting
+		SET base_url=?, kickoff_at=?, roster_locked=?, admin_password_hash=?,
+		    gemini_api_key=?, ai_model=?, ai_prompt=?, ai_reference_path=?
+		WHERE id=1`,
+		set.BaseURL, kickoffStr, boolToInt(set.RosterLocked), set.AdminPasswordHash,
+		set.GeminiAPIKey, set.AIModel, set.AIPrompt, set.AIReferencePath)
 	return err
 }
 
@@ -459,6 +471,136 @@ func (s *Store) Winner(asOf *time.Time) (*model.RankEntry, error) {
 	return rank[0], nil
 }
 
+// GetStoredFinalRanking returns the persisted final ranking snapshot.
+func (s *Store) GetStoredFinalRanking() ([]*model.RankEntry, *time.Time, error) {
+	var frozenStr string
+	err := s.db.QueryRow(`SELECT frozen_at FROM final_snapshot WHERE id=1`).Scan(&frozenStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	frozenAt, err := idb.StringToTime(frozenStr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rows, err := s.db.Query(`
+		SELECT participant_id, name, nickname, photo_path, count, total, complete,
+		       COALESCE(max_reached_at, ''), COALESCE(completed_at, '')
+		FROM final_ranking
+		ORDER BY position`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var out []*model.RankEntry
+	for rows.Next() {
+		var e model.RankEntry
+		var completeInt int
+		var maxAtStr, completedAtStr string
+		if err := rows.Scan(
+			&e.ParticipantID, &e.Name, &e.Nickname, &e.PhotoPath,
+			&e.Count, &e.Total, &completeInt, &maxAtStr, &completedAtStr,
+		); err != nil {
+			return nil, nil, err
+		}
+		e.Complete = completeInt == 1
+		if maxAtStr != "" {
+			t, _ := idb.StringToTime(maxAtStr)
+			e.MaxReachedAt = &t
+		}
+		if completedAtStr != "" {
+			t, _ := idb.StringToTime(completedAtStr)
+			e.CompletedAt = &t
+		}
+		out = append(out, &e)
+	}
+	return out, &frozenAt, rows.Err()
+}
+
+// EnsureFinalSnapshot persists the official ranking as of asOf and returns it.
+// If the stored snapshot was made for a different apito, it is replaced.
+func (s *Store) EnsureFinalSnapshot(asOf time.Time) ([]*model.RankEntry, error) {
+	if existing, frozenAt, err := s.GetStoredFinalRanking(); err == nil {
+		if frozenAt != nil && idb.TimeToString(*frozenAt) == idb.TimeToString(asOf) {
+			return existing, nil
+		}
+		if err := s.ClearFinalSnapshot(); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	ranking, err := s.GetFinalRanking(asOf)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := idb.TimeToString(time.Now())
+	res, err := tx.Exec(`INSERT OR IGNORE INTO final_snapshot (id, frozen_at, created_at) VALUES (1, ?, ?)`,
+		idb.TimeToString(asOf), now)
+	if err != nil {
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		existing, _, err := s.GetStoredFinalRanking()
+		return existing, err
+	}
+
+	for i, e := range ranking {
+		var maxAt, completedAt interface{}
+		if e.MaxReachedAt != nil {
+			maxAt = idb.TimeToString(*e.MaxReachedAt)
+		}
+		if e.CompletedAt != nil {
+			completedAt = idb.TimeToString(*e.CompletedAt)
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO final_ranking
+				(position, participant_id, name, nickname, photo_path, count, total, complete, max_reached_at, completed_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			i+1, e.ParticipantID, e.Name, e.Nickname, e.PhotoPath, e.Count, e.Total,
+			boolToInt(e.Complete), maxAt, completedAt,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ranking, nil
+}
+
+// ClearFinalSnapshot removes the persisted official ranking.
+func (s *Store) ClearFinalSnapshot() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.Exec(`DELETE FROM final_ranking`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM final_snapshot`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // ---- Transfer / Admin helpers ----
 
 // TransferCollection transfers all collection entries from srcID to dstID.
@@ -537,6 +679,8 @@ func (s *Store) ResetGameData() error {
 
 	// Ordem respeita as FKs (collection referencia participant; device idem).
 	stmts := []string{
+		`DELETE FROM final_ranking`,
+		`DELETE FROM final_snapshot`,
 		`DELETE FROM collection`,
 		`UPDATE participant SET claimed_device_id=NULL`,
 		`DELETE FROM device`,
@@ -590,12 +734,26 @@ func (s *Store) RestoreFrom(srcPath string) error {
 	}
 	defer conn.ExecContext(ctx, `DETACH DATABASE src`) //nolint:errcheck
 
+	tables := []string{"final_ranking", "final_snapshot", "collection", "device", "participant", "setting"}
+	tableExists := map[string]bool{}
+	for _, t := range tables {
+		ok, err := sourceTableExists(ctx, conn, t)
+		if err != nil {
+			return err
+		}
+		tableExists[t] = ok
+	}
+	sourceSettingCols, err := sourceTableColumns(ctx, conn, "setting")
+	if err != nil {
+		return err
+	}
+
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	// Limpa e recopia cada tabela a partir do backup.
-	tables := []string{"collection", "device", "participant", "setting"}
+	// Limpa e recopia cada tabela a partir do backup. Tabelas novas sao opcionais
+	// para que backups antigos continuem restauraveis apos migracoes.
 	for _, t := range tables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+t); err != nil {
 			tx.Rollback() //nolint:errcheck
@@ -603,6 +761,16 @@ func (s *Store) RestoreFrom(srcPath string) error {
 		}
 	}
 	for _, t := range tables {
+		if !tableExists[t] {
+			continue
+		}
+		if t == "setting" {
+			if err := copySettingFromSource(ctx, tx, sourceSettingCols); err != nil {
+				tx.Rollback() //nolint:errcheck
+				return err
+			}
+			continue
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO `+t+` SELECT * FROM src.`+t); err != nil {
 			tx.Rollback() //nolint:errcheck
 			return fmt.Errorf("restaurar %s: %w", t, err)
@@ -614,6 +782,64 @@ func (s *Store) RestoreFrom(srcPath string) error {
 
 	_, _ = conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 	return nil
+}
+
+func copySettingFromSource(ctx context.Context, tx *sql.Tx, sourceCols map[string]bool) error {
+	known := []string{
+		"id", "base_url", "kickoff_at", "roster_locked", "admin_password_hash",
+		"gemini_api_key", "ai_model", "ai_prompt", "ai_reference_path",
+	}
+	var cols []string
+	for _, c := range known {
+		if sourceCols[c] {
+			cols = append(cols, c)
+		}
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	q := fmt.Sprintf(`INSERT INTO setting (%s) SELECT %s FROM src.setting`,
+		joinQuotedCols(cols), joinQuotedCols(cols))
+	if _, err := tx.ExecContext(ctx, q); err != nil {
+		return fmt.Errorf("restaurar setting: %w", err)
+	}
+	return nil
+}
+
+func sourceTableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
+	var n int
+	err := conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM src.sqlite_master WHERE type='table' AND name=?`, table).Scan(&n)
+	return n > 0, err
+}
+
+func sourceTableColumns(ctx context.Context, conn *sql.Conn, table string) (map[string]bool, error) {
+	rows, err := conn.QueryContext(ctx, `PRAGMA src.table_info(`+table+`)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
+}
+
+func joinQuotedCols(cols []string) string {
+	out := make([]string, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, `"`+c+`"`)
+	}
+	return strings.Join(out, ",")
 }
 
 func boolToInt(b bool) int {

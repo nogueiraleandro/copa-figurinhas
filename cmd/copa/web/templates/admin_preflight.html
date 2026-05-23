@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pre-voo - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.preflight-score { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.preflight-score-value { font-size: 2rem; font-weight: 900; color: var(--blue); }
+.check-list { display: grid; gap: .75rem; }
+.check-row { display: grid; grid-template-columns: 42px 1fr; gap: .75rem; align-items: start; padding: .85rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+.check-icon { width: 32px; height: 32px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 900; }
+.check-ok .check-icon { background: #dcfce7; color: #166534; }
+.check-warn .check-icon { background: #fef9c3; color: #92400e; }
+.check-name { font-weight: 800; color: var(--blue); }
+.check-detail { color: var(--muted); font-size: .9rem; margin-top: .15rem; }
+.preflight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.preflight-kv { display: grid; gap: .35rem; }
+.preflight-kv div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: .35rem; }
+.preflight-ip-list { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .75rem; }
+.preflight-ip { border: 1px solid #e2e8f0; border-radius: 8px; padding: .75rem; background: #fff; max-width: 220px; }
+.preflight-ip img { width: 96px; height: 96px; display: block; margin: 0 auto .5rem; }
+</style>
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/dashboard">Dashboard</a>
+    <a href="/admin/preflight" class="active">Pre-voo</a>
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartoes</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>Pre-voo do evento</h1>
+
+  <div class="section">
+    <div class="preflight-score">
+      <div class="preflight-score-value">{{.Ready}} / {{.TotalChecks}}</div>
+      <div>
+        <h2>Checklist operacional</h2>
+        <p class="hint">Use esta tela antes de imprimir QRs, no ensaio e no dia do evento.</p>
+      </div>
+    </div>
+    <div class="check-list">
+      {{range .Checks}}
+      <div class="check-row {{if .OK}}check-ok{{else}}check-warn{{end}}">
+        <div class="check-icon">{{if .OK}}OK{{else}}!{{end}}</div>
+        <div>
+          <div class="check-name">{{.Name}}</div>
+          <div class="check-detail">{{.Detail}}</div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="preflight-grid" style="margin-top:1.5rem">
+    <div class="section" style="margin-top:0">
+      <h2>Estado do jogo</h2>
+      <div class="preflight-kv">
+        <div><strong>Ativos</strong><span>{{.Total}}</span></div>
+        <div><strong>Ja entraram</strong><span>{{.Registered}} / {{.Total}}</span></div>
+        <div><strong>Sem foto</strong><span>{{.MissingPhotos}}</span></div>
+        <div><strong>Elenco</strong><span>{{if .Setting.RosterLocked}}Travado{{else}}Aberto{{end}}</span></div>
+        <div><strong>Apito</strong><span>{{if .Setting.KickoffAt}}{{.Setting.KickoffAt}}{{else}}Nao configurado{{end}}</span></div>
+      </div>
+    </div>
+
+    <div class="section" style="margin-top:0">
+      <h2>Backup</h2>
+      {{if .LatestBackup}}
+      <p class="alert alert-success">Backup do banco encontrado: <code>{{.LatestBackup}}</code></p>
+      {{else}}
+      <p class="alert alert-warning">Nenhum backup periodico encontrado ainda.</p>
+      {{end}}
+      <div class="form-actions">
+        <a href="/admin/backup" class="btn btn-outline">Baixar banco</a>
+        <a href="/admin/backup/full" class="btn btn-primary">Baixar backup completo</a>
+      </div>
+      <p class="hint">O backup completo inclui <code>data/copa.db</code> e a pasta <code>uploads/</code>.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Rede e QR de teste</h2>
+    <p><strong>URL base configurada:</strong> <code>{{.BaseURL}}</code></p>
+    {{if .BaseURLMatchesLAN}}
+    <p class="alert alert-success">A URL base bate com um IP deste computador.</p>
+    {{else}}
+    <p class="alert alert-warning">A URL base nao bate com os IPs detectados. Se os QRs ja foram impressos, confirme manualmente no celular antes do evento.</p>
+    {{end}}
+    {{if .IPs}}
+    <div class="preflight-ip-list">
+      {{range .IPs}}
+      <div class="preflight-ip">
+        {{if .QRBase64}}<img src="data:image/png;base64,{{.QRBase64}}" alt="{{.URL}}">{{end}}
+        <div class="qr-url"><a href="{{.URL}}" target="_blank">{{.URL}}</a></div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="alert alert-error">Nenhum IP de rede detectado.</p>
+    {{end}}
+  </div>
+
+  <div class="section">
+    <h2>Ainda nao entraram ({{len .Unregistered}})</h2>
+    {{if .Unregistered}}
+    <div class="pending-list">
+      {{range .Unregistered}}
+      <span class="pending-chip">{{if .Nickname}}{{.Nickname}}{{else}}{{.Name}}{{end}}</span>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="alert alert-success">Todos os participantes ativos ja entraram.</p>
+    {{end}}
+  </div>
+</div>
+</body>
+</html>

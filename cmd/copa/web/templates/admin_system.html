@@ -16,6 +16,7 @@
 <nav class="admin-nav">
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
+    <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants">Participantes</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR Sheet</a>
@@ -67,6 +68,18 @@
     {{else}}
       <p class="alert alert-warning">Nenhum IP de rede detectado. Verifique se o Wi-Fi/cabo está conectado.</p>
     {{end}}
+  </div>
+
+  <div class="card form-card" style="margin-top:1.5rem">
+    <h2>Backup completo</h2>
+    <p class="hint">
+      Baixa um arquivo .zip com o banco SQLite e as fotos em <code>uploads/</code>.
+      Use este arquivo para guardar o estado completo do evento.
+    </p>
+    <div class="form-actions">
+      <a href="/admin/backup" class="btn btn-outline">Baixar somente o banco</a>
+      <a href="/admin/backup/full" class="btn btn-primary">Baixar backup completo</a>
+    </div>
   </div>
 
   <!-- Restaurar backup -->

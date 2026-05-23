@@ -10,6 +10,7 @@
 <nav class="admin-nav">
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
+    <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants">Participantes</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR Sheet</a>
@@ -30,7 +31,7 @@
   {{end}}
 
   <div class="card form-card">
-    <form method="POST">
+    <form method="POST" enctype="multipart/form-data">
       <div class="form-group">
         <label>URL base <span class="hint">(ex: http://192.168.1.100:8080)</span></label>
         <input type="text" name="base_url" class="form-input" value="{{.Setting.BaseURL}}" placeholder="http://192.168.1.100:8080" required>
@@ -44,6 +45,36 @@
       <div class="form-group">
         <label>Nova senha do admin <span class="hint">(deixe em branco para manter atual)</span></label>
         <input type="password" name="new_password" class="form-input" placeholder="Nova senha">
+      </div>
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:1.25rem 0">
+      <h2>Figurinhas com IA (Google Gemini)</h2>
+      <p class="alert alert-warning">
+        No free tier do Google AI Studio, as imagens enviadas podem ser usadas pelo Google para treino.
+        Use apenas com consentimento dos convidados, especialmente em fotos de criancas.
+      </p>
+      <div class="form-group">
+        <label>Chave da API Gemini <span class="hint">(Google AI Studio)</span></label>
+        <input type="password" name="gemini_api_key" class="form-input" placeholder="{{if .AIKeyConfigured}}Chave configurada - deixe em branco para manter{{else}}Cole a chave do Google AI Studio{{end}}">
+        <span class="hint"><a href="https://aistudio.google.com/apikey" target="_blank">Abrir Google AI Studio</a>. O plano Gemini Pro consumidor nao libera esta API.</span>
+      </div>
+      <div class="form-group">
+        <label>Modelo</label>
+        <input type="text" name="ai_model" class="form-input" value="{{if .Setting.AIModel}}{{.Setting.AIModel}}{{else}}gemini-2.5-flash-image{{end}}">
+      </div>
+      <div class="form-group">
+        <label>Prompt de estilo</label>
+        <textarea name="ai_prompt" class="form-input" rows="5" placeholder="{{.AIDefaultPrompt}}">{{.Setting.AIPrompt}}</textarea>
+        <span class="hint">Se ficar em branco, o sistema usa o prompt padrao.</span>
+      </div>
+      <div class="form-group">
+        <label>Figurinha modelo</label>
+        {{if .Setting.AIReferencePath}}
+        <div style="margin-bottom:0.5rem">
+          <img src="{{.Setting.AIReferencePath}}" alt="Figurinha modelo atual" style="width:96px;height:128px;object-fit:cover;border-radius:8px;">
+          <span class="hint">Modelo atual - envie outro arquivo para substituir.</span>
+        </div>
+        {{end}}
+        <input type="file" name="ai_reference" class="form-input" accept="image/*">
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Salvar configurações</button>

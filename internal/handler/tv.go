@@ -34,8 +34,10 @@ func (h *TVHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var ranking []*model.RankEntry
 	var champion *model.RankEntry
 	if gameStarted {
-		ranking, _ = h.store.GetFinalRanking(*setting.KickoffAt)
-		champion, _ = h.store.Winner(setting.KickoffAt)
+		ranking, _ = h.store.EnsureFinalSnapshot(*setting.KickoffAt)
+		if len(ranking) > 0 {
+			champion = ranking[0]
+		}
 	} else {
 		ranking, _ = h.store.GetRanking()
 	}

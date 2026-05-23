@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"io"
 	"mime/multipart"
@@ -176,6 +177,60 @@ func TestAdminSettingsSaved(t *testing.T) {
 	}
 }
 
+func TestAdminAISettingsSaved(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.PostForm(srv.URL+"/admin/settings", url.Values{
+		"base_url":       {"http://localhost:8080"},
+		"gemini_api_key": {"key-123"},
+		"ai_model":       {"gemini-2.5-flash-image"},
+		"ai_prompt":      {"usar estilo copa"},
+	})
+	if err != nil {
+		t.Fatalf("settings ai: %v", err)
+	}
+	resp.Body.Close()
+
+	set, _ := store.GetSetting()
+	if set.GeminiAPIKey != "key-123" || set.AIModel != "gemini-2.5-flash-image" || set.AIPrompt != "usar estilo copa" {
+		t.Fatalf("settings de IA nao salvaram: %#v", set)
+	}
+}
+
+func TestAdminUseAIWithoutKeyFallsBackToOriginalPhoto(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("name", "Sem Chave") //nolint:errcheck
+	mw.WriteField("use_ai", "on")      //nolint:errcheck
+	imgPart, _ := mw.CreateFormFile("photo", "foto.png")
+	imgPart.Write(onePixelPNG()) //nolint:errcheck
+	mw.Close()
+
+	req, _ := http.NewRequest("POST", srv.URL+"/admin/participants/new", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("new participant use_ai: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("cadastro esperava 303, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/admin/participants" {
+		t.Fatalf("sem chave deve ser no-op sem warning, got loc=%q", loc)
+	}
+	people, _ := store.ListParticipants()
+	if len(people) != 1 || people[0].PhotoPath == "" || !strings.HasSuffix(people[0].PhotoPath, ".png") {
+		t.Fatalf("foto original deveria ser salva como png, got %#v", people)
+	}
+}
+
 // Travar elenco bloqueia adicionar novos participantes (correcao de bug).
 func TestAdminRosterLockBlocksAdd(t *testing.T) {
 	srv, store := newAdminTestServer(t)
@@ -240,6 +295,37 @@ func TestAdminBackupDownloads(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(body), "SQLite format 3") {
 		t.Fatalf("download nao parece um arquivo SQLite valido")
+	}
+}
+
+func TestAdminFullBackupDownloadsZip(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	store.CreateParticipant("Dado", "", "") //nolint:errcheck
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/backup/full")
+	if err != nil {
+		t.Fatalf("full backup: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("full backup esperava 200, got %d", resp.StatusCode)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("full backup deveria ser zip valido: %v", err)
+	}
+	files := map[string]bool{}
+	for _, f := range zr.File {
+		files[f.Name] = true
+	}
+	for _, want := range []string{"data/copa.db", "manifest.txt"} {
+		if !files[want] {
+			t.Fatalf("zip deveria conter %s; arquivos=%v", want, files)
+		}
 	}
 }
 
@@ -337,6 +423,28 @@ func TestAdminSystemPageRenders(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "10.0.0.7:8080") {
 		t.Fatalf("página de sistema deveria mostrar o base_url configurado")
+	}
+}
+
+// Preflight renderiza o checklist operacional.
+func TestAdminPreflightPageRenders(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	store.CreateParticipant("Dado", "", "") //nolint:errcheck
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/preflight")
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("preflight esperava 200, got %d", resp.StatusCode)
+	}
+	html := string(body)
+	if !strings.Contains(html, "Pre-voo do evento") || !strings.Contains(html, "Checklist operacional") {
+		t.Fatalf("preflight deveria renderizar o checklist")
 	}
 }
 

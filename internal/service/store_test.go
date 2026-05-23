@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -261,6 +262,41 @@ func TestFinalRankingFreezesAtKickoff(t *testing.T) {
 	}
 }
 
+func TestFinalSnapshotPersistsOfficialResult(t *testing.T) {
+	s := newTestStore(t)
+	a := mustParticipant(t, s, "A")
+	b := mustParticipant(t, s, "B")
+	s.CreateDevice(a) //nolint:errcheck
+	s.CreateDevice(b) //nolint:errcheck
+
+	s.AddToCollection(a, a) //nolint:errcheck
+	kickoff := time.Now()
+	time.Sleep(15 * time.Millisecond)
+	s.AddToCollection(a, b) // depois do apito: nao entra no snapshot
+
+	snap, err := s.EnsureFinalSnapshot(kickoff)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if len(snap) == 0 || snap[0].ParticipantID != a || snap[0].Count != 1 || snap[0].Total != 2 {
+		t.Fatalf("snapshot deveria guardar A com 1/2, got %#v", snap)
+	}
+
+	if err := s.SetParticipantActive(b, false); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	stored, frozenAt, err := s.GetStoredFinalRanking()
+	if err != nil {
+		t.Fatalf("stored snapshot: %v", err)
+	}
+	if frozenAt == nil || idb.TimeToString(*frozenAt) != idb.TimeToString(kickoff) {
+		t.Fatalf("frozen_at deveria ser o apito original")
+	}
+	if len(stored) == 0 || stored[0].Count != 1 || stored[0].Total != 2 {
+		t.Fatalf("snapshot oficial nao deveria mudar apos editar elenco, got %#v", stored)
+	}
+}
+
 // Quem nao reivindicou identidade (sem device) nao aparece no ranking.
 func TestRankingExcludesUnclaimed(t *testing.T) {
 	s := newTestStore(t)
@@ -298,9 +334,9 @@ func TestResetGameData(t *testing.T) {
 	// Dados do jogo.
 	a := mustParticipant(t, s, "Ana")
 	b := mustParticipant(t, s, "Bruno")
-	s.CreateDevice(a)        //nolint:errcheck
-	s.AddToCollection(a, a)  //nolint:errcheck
-	s.AddToCollection(a, b)  //nolint:errcheck
+	s.CreateDevice(a)       //nolint:errcheck
+	s.AddToCollection(a, a) //nolint:errcheck
+	s.AddToCollection(a, b) //nolint:errcheck
 
 	if err := s.ResetGameData(); err != nil {
 		t.Fatalf("reset: %v", err)
@@ -334,8 +370,8 @@ func TestRestoreFrom(t *testing.T) {
 	a := newTestStore(t)
 	ana := mustParticipant(t, a, "Ana")
 	bruno := mustParticipant(t, a, "Bruno")
-	a.CreateDevice(ana)         //nolint:errcheck
-	a.AddToCollection(ana, ana) //nolint:errcheck
+	a.CreateDevice(ana)           //nolint:errcheck
+	a.AddToCollection(ana, ana)   //nolint:errcheck
 	a.AddToCollection(ana, bruno) //nolint:errcheck
 
 	backupPath := filepath.Join(t.TempDir(), "bk.db")
@@ -363,5 +399,43 @@ func TestRestoreFrom(t *testing.T) {
 	// Identidade/token preservados: dá pra achar a Ana pelo token original.
 	if _, err := b.GetParticipantByToken(people[0].Token); err != nil {
 		t.Fatalf("token deveria ser restaurado: %v", err)
+	}
+}
+
+func TestRestoreFromOldBackupWithoutAIColumns(t *testing.T) {
+	oldPath := filepath.Join(t.TempDir(), "old.db")
+	oldDB, err := sql.Open("sqlite", oldPath)
+	if err != nil {
+		t.Fatalf("open old db: %v", err)
+	}
+	_, err = oldDB.Exec(`
+		CREATE TABLE setting (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			base_url TEXT NOT NULL DEFAULT 'http://localhost:8080',
+			kickoff_at TEXT,
+			roster_locked INTEGER NOT NULL DEFAULT 0,
+			admin_password_hash TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO setting (id, base_url, kickoff_at, roster_locked, admin_password_hash)
+		VALUES (1, 'http://192.168.0.50:8080', NULL, 0, 'hash-antigo');
+	`)
+	oldDB.Close()
+	if err != nil {
+		t.Fatalf("seed old db: %v", err)
+	}
+
+	s := newTestStore(t)
+	if err := s.RestoreFrom(oldPath); err != nil {
+		t.Fatalf("restore old backup: %v", err)
+	}
+	set, err := s.GetSetting()
+	if err != nil {
+		t.Fatalf("get setting: %v", err)
+	}
+	if set.BaseURL != "http://192.168.0.50:8080" || set.AdminPasswordHash != "hash-antigo" {
+		t.Fatalf("campos antigos nao restauraram: %#v", set)
+	}
+	if set.AIModel != "gemini-2.5-flash-image" || set.GeminiAPIKey != "" || set.AIPrompt != "" || set.AIReferencePath != "" {
+		t.Fatalf("campos novos deveriam ficar com defaults: %#v", set)
 	}
 }

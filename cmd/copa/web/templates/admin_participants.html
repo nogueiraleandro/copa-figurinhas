@@ -10,6 +10,7 @@
 <nav class="admin-nav">
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
+    <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants" class="active">Participantes</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR Sheet</a>
@@ -26,6 +27,10 @@
     <h1>Participantes</h1>
     <a href="/admin/participants/new" class="btn btn-primary">+ Adicionar</a>
   </div>
+
+  {{if .AIWarn}}
+  <div class="alert alert-warning">A IA nao conseguiu gerar a figurinha. A foto original foi salva.</div>
+  {{end}}
 
   <table class="admin-table">
     <thead>

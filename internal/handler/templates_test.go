@@ -16,7 +16,8 @@ func TestAllTemplatesParse(t *testing.T) {
 	for _, name := range []string{
 		"album.html", "confirm.html", "reveal.html", "tv.html", "home.html",
 		"admin_dashboard.html", "admin_settings.html", "admin_qrsheet.html",
-		"admin_system.html", "admin_cards.html",
+		"admin_system.html", "admin_cards.html", "admin_preflight.html",
+		"admin_participants.html", "admin_participant_form.html",
 	} {
 		if tmpl.tmpl.Lookup(name) == nil {
 			t.Errorf("template %q nao encontrado", name)

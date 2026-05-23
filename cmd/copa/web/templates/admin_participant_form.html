@@ -10,6 +10,7 @@
 <nav class="admin-nav">
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
+    <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants" class="active">Participantes</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR Sheet</a>
@@ -24,6 +25,9 @@
 
   {{if .Error}}
   <div class="alert alert-error">{{.Error}}</div>
+  {{end}}
+  {{if .AIWarn}}
+  <div class="alert alert-warning">A IA nao conseguiu gerar a figurinha. A foto original foi salva.</div>
   {{end}}
 
   <div class="card form-card">
@@ -45,6 +49,17 @@
         </div>
         {{end}}{{end}}
         <input type="file" name="photo" class="form-input" accept="image/*">
+      </div>
+      <div class="form-group">
+        {{if .AIEnabled}}
+        <label>
+          <input type="checkbox" name="use_ai">
+          Gerar figurinha com IA (Google Gemini)
+        </label>
+        <span class="hint">Usa a chave, o prompt e a figurinha modelo configurados em Config. Se falhar, salva a foto original.</span>
+        {{else}}
+        <span class="hint">Para gerar figurinhas com IA, configure a chave do Gemini em <a href="/admin/settings">Config</a>.</span>
+        {{end}}
       </div>
       {{if not .IsNew}}
       <div class="form-group">
