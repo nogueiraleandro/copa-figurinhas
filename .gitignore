@@ -1,0 +1,25 @@
+# Binários compilados
+copa.exe
+copa.exe~
+*.exe
+*.exe~
+
+# Dados do evento (banco SQLite, backups, WAL) — NÃO versionar (contém dados pessoais e hash de senha)
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.bak
+
+# Fotos enviadas pelos participantes
+/uploads/
+
+# CSVs de importação com nomes reais
+*.csv
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Participantes - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants" class="active">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/transfer">Transferir</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/tv" target="_blank">Telão</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <div class="section-header">
+    <h1>Participantes</h1>
+    <a href="/admin/participants/new" class="btn btn-primary">+ Adicionar</a>
+  </div>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Foto</th>
+        <th>Nome</th>
+        <th>Apelido</th>
+        <th>Token</th>
+        <th>Status</th>
+        <th>QR</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Participants}}
+      <tr class="{{if not .Active}}row-inactive{{end}}">
+        <td>
+          {{if .PhotoPath}}
+          <img src="{{.PhotoPath}}" alt="{{.Name}}" class="table-avatar">
+          {{else}}
+          <div class="table-avatar-placeholder">{{initial .Name}}</div>
+          {{end}}
+        </td>
+        <td>{{.Name}}</td>
+        <td>{{.Nickname}}</td>
+        <td><code>{{.Token}}</code></td>
+        <td>{{if .Active}}<span class="badge badge-green">Ativo</span>{{else}}<span class="badge badge-gray">Inativo</span>{{end}}</td>
+        <td><a href="/admin/qr/{{.Token}}" target="_blank" class="btn btn-sm btn-outline">QR</a></td>
+        <td>
+          <a href="/admin/participants/{{.ID}}/edit" class="btn btn-sm btn-outline">Editar</a>
+          {{if .Active}}
+          <form method="POST" action="/admin/participants/{{.ID}}/delete" style="display:inline" onsubmit="return confirm('Desativar {{.Name}}?')">
+            <button type="submit" class="btn btn-sm btn-danger">Desativar</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bem-vindo! - Copa Figurinhas</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container center">
+  <div class="card confirm-card">
+    <div class="panini-logo">⚽ Copa Figurinhas 2026</div>
+    <h2>Bem-vindo!</h2>
+    <div class="sticker-preview">
+      {{if .Sticker.PhotoPath}}
+      <img src="{{.Sticker.PhotoPath}}" alt="{{.Sticker.Name}}" class="sticker-photo-lg">
+      {{else}}
+      <div class="sticker-photo-placeholder-lg">{{slice .Sticker.Name 0 1}}</div>
+      {{end}}
+      <div class="sticker-name-lg">
+        {{if .Sticker.Nickname}}{{.Sticker.Nickname}}{{else}}{{.Sticker.Name}}{{end}}
+      </div>
+    </div>
+    <p class="confirm-question">Você é <strong>{{.Sticker.Name}}</strong>?</p>
+    <div class="confirm-actions">
+      <form method="POST" action="/s/{{.Sticker.Token}}/confirm">
+        <input type="hidden" name="choice" value="yes">
+        <button type="submit" class="btn btn-primary btn-lg">✅ Sim, sou eu!</button>
+      </form>
+      <form method="POST" action="/s/{{.Sticker.Token}}/confirm">
+        <input type="hidden" name="choice" value="no">
+        <button type="submit" class="btn btn-secondary btn-lg">❌ Não sou eu</button>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

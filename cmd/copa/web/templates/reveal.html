@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova figurinha! - Copa Figurinhas 2026</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="reveal-body">
+<div class="reveal-container">
+  <div class="reveal-card" id="revealCard">
+    <div class="reveal-shine"></div>
+    <div class="reveal-badge">NOVA FIGURINHA!</div>
+    {{if .Photo}}
+    <img src="{{.Photo}}" alt="{{.Name}}" class="reveal-photo">
+    {{else}}
+    <div class="reveal-initials">{{.Initial}}</div>
+    {{end}}
+    <div class="reveal-name">{{.Name}}</div>
+    {{if .Complete}}
+    <div class="reveal-complete">🏆 ÁLBUM COMPLETO!</div>
+    {{end}}
+  </div>
+  <div class="reveal-actions">
+    <a href="/album" class="btn btn-primary btn-lg">Ver meu álbum</a>
+  </div>
+</div>
+<script>
+// Trigger animation after load
+window.addEventListener('load', function() {
+  document.getElementById('revealCard').classList.add('animate');
+  // Auto-redirect to album after 4 seconds
+  setTimeout(function() {
+    window.location.href = '/album';
+  }, 4000);
+});
+</script>
+</body>
+</html>

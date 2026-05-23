@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartões para impressão - Copa Figurinhas</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10mm;
+}
+.card-pair { display: flex; gap: 4mm; break-inside: avoid; page-break-inside: avoid; }
+.fig-card {
+  width: 60mm; height: 85mm;
+  border: 1px dashed #bbb;
+  border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 4mm; box-sizing: border-box;
+  background: #fff;
+}
+.fig-card.front { background: linear-gradient(160deg,#fffbe6,#ffe9a8); }
+.fig-front-photo { width: 42mm; height: 42mm; object-fit: cover; border-radius: 6px; border: 2px solid #d4af37; }
+.fig-front-placeholder {
+  width: 42mm; height: 42mm; border-radius: 6px; border: 2px solid #d4af37;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20mm; font-weight: 700; color: #b8860b; background: #fff7d6;
+}
+.fig-front-name { font-weight: 700; font-size: 5mm; margin-top: 3mm; }
+.fig-front-nick { font-size: 3.6mm; color: #555; }
+.fig-front-tag { margin-top: 2mm; font-size: 3mm; letter-spacing: .1em; color: #b8860b; }
+.fig-back-qr { width: 46mm; height: 46mm; }
+.fig-back-name { font-weight: 600; font-size: 4mm; margin-top: 2mm; }
+.fig-back-hint { font-size: 3mm; color: #666; margin-top: 1mm; }
+.fig-back-url { font-size: 2.4mm; color: #999; margin-top: 1mm; word-break: break-all; }
+@media print {
+  .admin-nav, .no-print { display: none !important; }
+  body { background: #fff; }
+  .admin-content { padding: 0; }
+  .cards-grid { gap: 6mm; }
+  .fig-card { border-color: #ccc; }
+}
+</style>
+</head>
+<body class="admin-body">
+<nav class="admin-nav no-print">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards" class="active">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <div class="section-header no-print">
+    <h1>Cartões de figurinha (frente + verso)</h1>
+    <button onclick="window.print()" class="btn btn-primary">🖨️ Imprimir</button>
+  </div>
+  <p class="hint no-print">
+    Cada par é uma figurinha: a <strong>frente</strong> (foto + nome) e o <strong>verso</strong>
+    (QR). Imprima, recorte na linha tracejada e cole frente com verso.
+  </p>
+
+  <div class="cards-grid">
+    {{range .Entries}}
+    <div class="card-pair">
+      <!-- Frente -->
+      <div class="fig-card front">
+        {{if .Participant.PhotoPath}}
+        <img src="{{.Participant.PhotoPath}}" alt="{{.Participant.Name}}" class="fig-front-photo">
+        {{else}}
+        <div class="fig-front-placeholder">{{slice .Participant.Name 0 1}}</div>
+        {{end}}
+        <div class="fig-front-name">{{.Participant.Name}}</div>
+        {{if .Participant.Nickname}}<div class="fig-front-nick">"{{.Participant.Nickname}}"</div>{{end}}
+        <div class="fig-front-tag">⚽ COPA 2026</div>
+      </div>
+      <!-- Verso -->
+      <div class="fig-card back">
+        <img src="data:image/png;base64,{{.QRBase64}}" alt="QR" class="fig-back-qr">
+        <div class="fig-back-name">{{.Participant.Name}}</div>
+        <div class="fig-back-hint">Escaneie para entrar no jogo</div>
+        <div class="fig-back-url">{{.URL}}</div>
+      </div>
+    </div>
+    {{else}}
+    <p class="hint">Nenhum participante ativo cadastrado.</p>
+    {{end}}
+  </div>
+</div>
+</body>
+</html>

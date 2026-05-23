@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telão - Copa Figurinhas 2026</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="tv-body">
+
+<!-- Indicador de conexão (visibilidade pro operador) -->
+<div id="connDot" class="tv-conn-dot connecting" title="Estado da conexão com o servidor">🟡 conectando…</div>
+
+{{if and .GameStarted .Champion}}
+<!-- Tela de campeao (apos o apito) -->
+<canvas id="confetti" class="confetti-canvas"></canvas>
+<div class="champion-screen">
+  <div class="champion-inner">
+    <div class="champion-label">🏆 GRANDE CAMPEÃO 🏆</div>
+    {{if .Champion.PhotoPath}}
+    <img src="{{.Champion.PhotoPath}}" alt="{{.Champion.Name}}" class="champion-avatar">
+    {{else}}
+    <div class="champion-avatar-placeholder">{{initial .Champion.Name}}</div>
+    {{end}}
+    <div class="champion-name">{{if .Champion.Nickname}}{{.Champion.Nickname}}{{else}}{{.Champion.Name}}{{end}}</div>
+    <div class="champion-score">{{.Champion.Count}} / {{.Champion.Total}} figurinhas</div>
+    {{if .Champion.Complete}}<div class="champion-tag">ÁLBUM COMPLETO!</div>{{end}}
+
+    {{if .Ranking}}
+    <!-- Pódio top-3 -->
+    <div class="podium">
+      {{range $i, $e := .Ranking}}
+      {{if lt $i 3}}
+      <div class="podium-spot podium-{{add $i 1}}">
+        <div class="podium-medal">{{if eq $i 0}}🥇{{else if eq $i 1}}🥈{{else}}🥉{{end}}</div>
+        {{if $e.PhotoPath}}
+        <img src="{{$e.PhotoPath}}" alt="{{$e.Name}}" class="podium-avatar">
+        {{else}}
+        <div class="podium-avatar-placeholder">{{initial $e.Name}}</div>
+        {{end}}
+        <div class="podium-name">{{if $e.Nickname}}{{$e.Nickname}}{{else}}{{$e.Name}}{{end}}</div>
+        <div class="podium-score">{{$e.Count}} / {{$e.Total}}</div>
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="tv-layout">
+
+  <!-- Left: Ranking -->
+  <div class="tv-ranking">
+    <div class="tv-title">⚽ Copa Figurinhas 2026</div>
+    <div class="tv-subtitle">RANKING AO VIVO</div>
+    <div id="rankingList" class="ranking-list">
+      {{range $i, $e := .Ranking}}
+      <div class="rank-row {{if $e.Complete}}complete{{end}}" data-id="{{$e.ParticipantID}}">
+        <div class="rank-pos">{{add $i 1}}º</div>
+        {{if $e.PhotoPath}}
+        <img src="{{$e.PhotoPath}}" alt="{{$e.Name}}" class="rank-avatar">
+        {{else}}
+        <div class="rank-avatar-placeholder">{{initial $e.Name}}</div>
+        {{end}}
+        <div class="rank-info">
+          <div class="rank-name">{{if $e.Nickname}}{{$e.Nickname}}{{else}}{{$e.Name}}{{end}}</div>
+          <div class="rank-count">{{$e.Count}} / {{$e.Total}} figurinhas</div>
+          {{if $e.Complete}}<div class="rank-complete-badge">🏆 COMPLETO!</div>{{end}}
+        </div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar">
+            <div class="rank-bar-fill {{if $e.Complete}}complete{{end}}" style="width:{{if $e.Total}}{{mul $e.Count 100 | div100 $e.Total}}{{else}}0{{end}}%"></div>
+          </div>
+        </div>
+      </div>
+      {{else}}
+      <div class="rank-empty">Nenhum participante registrado ainda.</div>
+      {{end}}
+    </div>
+  </div>
+
+  <!-- Right: Info panel -->
+  <div class="tv-info">
+    <!-- Countdown -->
+    <div class="tv-countdown-block">
+      <div class="tv-section-title">⏱ Apito inicial</div>
+      {{if .KickoffAt}}
+      <div id="countdown" class="countdown-display">--:--:--</div>
+      <div class="kickoff-time">{{.KickoffAt}}</div>
+      {{else}}
+      <div class="countdown-display">Em breve</div>
+      {{end}}
+    </div>
+
+    <!-- How to join -->
+    <div class="tv-howto-block">
+      <div class="tv-section-title">📱 Como participar</div>
+      {{if .QRBase64}}
+      <img src="data:image/png;base64,{{.QRBase64}}" alt="QR Code" class="tv-qr">
+      {{end}}
+      <div class="tv-steps">
+        <div class="tv-step">1. Escaneie o QR acima</div>
+        <div class="tv-step">2. Confirme seu nome</div>
+        <div class="tv-step">3. Escaneie as figurinhas dos outros</div>
+        <div class="tv-step">4. Quem completar primeiro vence!</div>
+      </div>
+      <div class="tv-url">{{.BaseURL}}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Complete alert overlay -->
+<div id="completeAlert" class="complete-alert hidden">
+  <div class="complete-alert-inner">
+    <div class="complete-alert-trophy">🏆</div>
+    <div class="complete-alert-title">ÁLBUM COMPLETO!</div>
+    <div class="complete-alert-name" id="completeAlertName"></div>
+    <div class="complete-alert-time" id="completeAlertTime"></div>
+  </div>
+</div>
+
+<script>
+const gameStarted = {{if .GameStarted}}true{{else}}false{{end}};
+let reloaded = false;
+{{if .KickoffAt}}
+const kickoffAt = new Date('{{.KickoffAt}}');
+function updateCountdown() {
+  const now = new Date();
+  const diff = kickoffAt - now;
+  if (diff <= 0) {
+    document.getElementById('countdown').textContent = '🔔 APITO!';
+    // No apito, recarrega uma vez para o servidor renderizar a tela de campeao.
+    if (!gameStarted && !reloaded) {
+      reloaded = true;
+      setTimeout(() => location.reload(), 1500);
+    }
+    return;
+  }
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  document.getElementById('countdown').textContent =
+    String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+updateCountdown();
+setInterval(updateCountdown, 1000);
+{{end}}
+
+// SSE for live ranking updates
+const evtSource = new EventSource('/sse');
+const connDot = document.getElementById('connDot');
+
+function setConn(state) {
+  if (!connDot) return;
+  connDot.className = 'tv-conn-dot ' + state;
+  connDot.textContent = state === 'online' ? '🟢 ao vivo'
+    : state === 'offline' ? '🔴 reconectando…'
+    : '🟡 conectando…';
+}
+
+evtSource.onopen = function() { setConn('online'); };
+evtSource.onerror = function() { setConn('offline'); }; // EventSource reconecta sozinho
+
+evtSource.addEventListener('ranking', function(e) {
+  const ranking = JSON.parse(e.data);
+  renderRanking(ranking);
+});
+
+evtSource.addEventListener('complete', function(e) {
+  const data = JSON.parse(e.data);
+  showCompleteAlert(data);
+});
+
+function renderRanking(ranking) {
+  // Apos o apito a classificacao esta congelada: ignora updates ao vivo.
+  if (gameStarted) return;
+  const list = document.getElementById('rankingList');
+  if (!ranking || ranking.length === 0) return;
+  list.innerHTML = ranking.map((e, i) => {
+    const pct = e.Total > 0 ? Math.round(e.Count * 100 / e.Total) : 0;
+    const display = e.Nickname || e.Name;
+    const initial = (e.Name || '?')[0].toUpperCase();
+    const avatar = e.PhotoPath
+      ? `<img src="${e.PhotoPath}" alt="${e.Name}" class="rank-avatar">`
+      : `<div class="rank-avatar-placeholder">${initial}</div>`;
+    return `<div class="rank-row${e.Complete ? ' complete' : ''}" data-id="${e.ParticipantID}">
+      <div class="rank-pos">${i+1}º</div>
+      ${avatar}
+      <div class="rank-info">
+        <div class="rank-name">${display}</div>
+        <div class="rank-count">${e.Count} / ${e.Total} figurinhas</div>
+        ${e.Complete ? '<div class="rank-complete-badge">🏆 COMPLETO!</div>' : ''}
+      </div>
+      <div class="rank-bar-wrap">
+        <div class="rank-bar">
+          <div class="rank-bar-fill${e.Complete ? ' complete' : ''}" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showCompleteAlert(data) {
+  const alert = document.getElementById('completeAlert');
+  document.getElementById('completeAlertName').textContent = data.name || data.Name;
+  const ts = data.completedAt || data.CompletedAt;
+  if (ts) {
+    const d = new Date(ts);
+    document.getElementById('completeAlertTime').textContent = d.toLocaleTimeString('pt-BR');
+  }
+  alert.classList.remove('hidden');
+  setTimeout(() => alert.classList.add('hidden'), 15000);
+}
+
+// Confete na tela de campeão (sem dependências/internet).
+function startConfetti() {
+  const canvas = document.getElementById('confetti');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  const colors = ['#f4d03f','#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#ffffff'];
+  const pieces = [];
+  for (let i = 0; i < 160; i++) {
+    pieces.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height - canvas.height,
+      w: 6 + Math.random() * 8,
+      h: 8 + Math.random() * 10,
+      color: colors[(Math.random() * colors.length) | 0],
+      vy: 1.5 + Math.random() * 3,
+      vx: -1 + Math.random() * 2,
+      rot: Math.random() * Math.PI,
+      vr: -0.1 + Math.random() * 0.2
+    });
+  }
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of pieces) {
+      p.y += p.vy; p.x += p.vx; p.rot += p.vr;
+      if (p.y > canvas.height + 20) { p.y = -20; p.x = Math.random() * canvas.width; }
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+if (gameStarted) startConfetti();
+</script>
+</body>
+</html>

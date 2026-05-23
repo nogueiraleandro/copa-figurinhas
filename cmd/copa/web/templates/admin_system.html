@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.sys-ip-grid { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: .75rem; }
+.sys-ip-cell { text-align: center; }
+.sys-ip-cell .qr-code-img { width: 140px; height: 140px; }
+.sys-ip-cell .qr-url { margin-top: .25rem; font-size: .9rem; word-break: break-all; }
+</style>
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema" class="active">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>Sistema</h1>
+
+  {{if .Error}}
+  <div class="alert alert-error">{{.Error}}</div>
+  {{end}}
+  {{if .Reset}}
+  <div class="alert alert-success">✅ Dados do jogo limpos. O elenco foi destravado e o apito zerado (login mantido).</div>
+  {{end}}
+  {{if .Restored}}
+  <div class="alert alert-success">✅ Backup restaurado com sucesso.</div>
+  {{end}}
+
+  <!-- Diagnóstico de rede -->
+  <div class="card form-card">
+    <h2>📡 Diagnóstico de rede</h2>
+    <p><strong>URL base configurada:</strong> <code>{{.BaseURL}}</code></p>
+
+    {{if .IPs}}
+      {{if .BaseURLMatchesLAN}}
+      <p class="alert alert-success">✅ O <code>base_url</code> bate com este computador na rede.</p>
+      {{else}}
+      <p class="alert alert-error">
+        ⚠️ Atenção: seu <code>base_url</code> aponta para <strong>{{if .BaseURLHost}}{{.BaseURLHost}}{{else}}(vazio){{end}}</strong>,
+        mas este computador está com os IPs abaixo. Os QR codes só vão funcionar se o
+        <code>base_url</code> usar um endereço que os celulares conseguem acessar.
+        Ajuste em <a href="/admin/settings">Config</a> usando uma das opções abaixo.
+      </p>
+      {{end}}
+
+      <p class="hint">Endereços deste computador (porta {{.Port}}) — escaneie o QR de teste pelo celular para confirmar que a rede e o firewall estão liberados:</p>
+      <div class="sys-ip-grid">
+        {{range .IPs}}
+        <div class="sys-ip-cell">
+          {{if .QRBase64}}<img src="data:image/png;base64,{{.QRBase64}}" alt="{{.URL}}" class="qr-code-img">{{end}}
+          <div class="qr-url"><a href="{{.URL}}" target="_blank">{{.URL}}</a></div>
+        </div>
+        {{end}}
+      </div>
+    {{else}}
+      <p class="alert alert-warning">Nenhum IP de rede detectado. Verifique se o Wi-Fi/cabo está conectado.</p>
+    {{end}}
+  </div>
+
+  <!-- Restaurar backup -->
+  <div class="card form-card" style="margin-top:1.5rem">
+    <h2>♻️ Restaurar backup</h2>
+    <p class="hint">
+      Substitui <strong>todos</strong> os dados atuais pelos do arquivo de backup (.db) gerado
+      em <a href="/admin/backup">Baixar backup</a>. Não precisa reiniciar o servidor.
+    </p>
+    <p class="alert alert-warning">
+      ⚠️ As <strong>fotos</strong> ficam na pasta <code>uploads/</code> e não vêm no backup —
+      se o backup for de outro computador, as fotos precisam já estar presentes. A
+      <strong>senha de admin</strong> passa a ser a do backup.
+    </p>
+    <form method="POST" action="/admin/sistema/restore" enctype="multipart/form-data"
+          onsubmit="return confirm('Restaurar este backup? Os dados atuais serão substituídos.');">
+      <div class="form-group">
+        <input type="file" name="backup" accept=".db" class="form-input" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Restaurar backup</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Reset / limpar dados -->
+  <div class="card form-card" style="margin-top:1.5rem">
+    <h2>🧹 Limpar dados de teste</h2>
+    <p class="hint">
+      Apaga participantes, coleções, sessões e fotos — útil depois do ensaio, para começar o
+      evento de verdade do zero. Mantém a <strong>URL base</strong> e a <strong>senha de admin</strong>.
+    </p>
+    <form method="POST" action="/admin/sistema/reset"
+          onsubmit="return confirm('Tem certeza? Isso apaga TODOS os participantes e coleções.');">
+      <div class="form-group">
+        <label>Digite <strong>LIMPAR</strong> para confirmar:</label>
+        <input type="text" name="confirm" class="form-input" placeholder="LIMPAR" autocomplete="off" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-danger">🧹 Limpar todos os dados</button>
+      </div>
+    </form>
+  </div>
+
+  <p style="margin-top:1rem"><a href="/admin/dashboard">← Voltar ao dashboard</a></p>
+</div>
+</body>
+</html>

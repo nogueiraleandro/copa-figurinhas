@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Importação em massa - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk" class="active">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>Importação em massa</h1>
+
+  {{if .Done}}
+  <div class="alert alert-success">
+    ✅ Importação concluída: <strong>{{.Created}}</strong> criados, <strong>{{.Skipped}}</strong> ignorados.
+    {{if .Errors}}
+    <ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .Error}}
+  <div class="alert alert-error">{{.Error}}</div>
+  {{end}}
+
+  <div class="card form-card">
+    <h2>Formato do CSV</h2>
+    <p>O CSV deve ter as colunas: <code>name, nickname, image_filename</code></p>
+    <p>Exemplo:</p>
+    <pre class="code-block">name,nickname,image_filename
+João da Silva,Joãozinho,joao.jpg
+Maria Santos,Maris,maria.png
+Pedro Alves,,pedro.jpg</pre>
+    <p class="hint">A coluna <code>image_filename</code> é opcional. O apelido também é opcional.</p>
+
+    <form method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Arquivo CSV *</label>
+        <input type="file" name="csv" accept=".csv,text/csv" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label>Fotos (múltiplos arquivos)</label>
+        <input type="file" name="images" accept="image/*" class="form-input" multiple>
+        <span class="hint">Os nomes dos arquivos devem corresponder à coluna image_filename do CSV.</span>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Importar</button>
+        <a href="/admin/participants" class="btn btn-outline">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .IsNew}}Novo Participante{{else}}Editar Participante{{end}} - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants" class="active">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>{{if .IsNew}}Novo Participante{{else}}Editar Participante{{end}}</h1>
+
+  {{if .Error}}
+  <div class="alert alert-error">{{.Error}}</div>
+  {{end}}
+
+  <div class="card form-card">
+    <form method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Nome completo *</label>
+        <input type="text" name="name" class="form-input" value="{{if .Participant}}{{.Participant.Name}}{{end}}" required>
+      </div>
+      <div class="form-group">
+        <label>Apelido (exibido no álbum)</label>
+        <input type="text" name="nickname" class="form-input" value="{{if .Participant}}{{.Participant.Nickname}}{{end}}">
+      </div>
+      <div class="form-group">
+        <label>Foto (JPG/PNG)</label>
+        {{if .Participant}}{{if .Participant.PhotoPath}}
+        <div style="margin-bottom:0.5rem">
+          <img src="{{.Participant.PhotoPath}}" alt="Foto atual" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
+          <span class="hint">Foto atual — envie nova para substituir</span>
+        </div>
+        {{end}}{{end}}
+        <input type="file" name="photo" class="form-input" accept="image/*">
+      </div>
+      {{if not .IsNew}}
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="active" {{if .Participant}}{{if .Participant.Active}}checked{{end}}{{end}}>
+          Participante ativo
+        </label>
+      </div>
+      {{end}}
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="/admin/participants" class="btn btn-outline">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

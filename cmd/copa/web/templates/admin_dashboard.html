@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/transfer">Transferir</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/tv" target="_blank">Telão</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>Dashboard</h1>
+
+  <div class="dashboard-cards">
+    <div class="dash-card">
+      <div class="dash-card-value">{{len .Participants}}</div>
+      <div class="dash-card-label">Participantes cadastrados</div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-value">{{.Total}}</div>
+      <div class="dash-card-label">Ativos (meta do álbum)</div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-card-value">{{.Registered}} / {{.Total}}</div>
+      <div class="dash-card-label">Já entraram no jogo</div>
+    </div>
+    <div class="dash-card {{if .Setting.RosterLocked}}locked{{end}}">
+      <div class="dash-card-value">{{if .Setting.RosterLocked}}🔒 Travado{{else}}🔓 Aberto{{end}}</div>
+      <div class="dash-card-label">Elenco</div>
+    </div>
+  </div>
+
+  <!-- Roster lock control -->
+  <div class="section">
+    <h2>Controle do Elenco</h2>
+    {{if .Setting.RosterLocked}}
+    <p class="alert alert-warning">⚠️ O elenco está <strong>travado</strong>. Nenhum participante novo pode ser adicionado.</p>
+    <form method="POST" action="/admin/lock">
+      <input type="hidden" name="lock" value="0">
+      <button type="submit" class="btn btn-warning">🔓 Destravar elenco</button>
+    </form>
+    {{else}}
+    <p>Trave o elenco ~30 minutos antes do apito para congelar o número total de figurinhas.</p>
+    <form method="POST" action="/admin/lock" onsubmit="return confirm('Travar o elenco? Novos participantes não poderão ser adicionados.')">
+      <input type="hidden" name="lock" value="1">
+      <button type="submit" class="btn btn-danger">🔒 Travar elenco agora</button>
+    </form>
+    {{end}}
+  </div>
+
+  <!-- Ranking -->
+  <div class="section">
+    <h2>Ranking atual</h2>
+    {{if .Ranking}}
+    <table class="admin-table">
+      <thead>
+        <tr><th>#</th><th>Nome</th><th>Figurinhas</th><th>%</th><th>Completo?</th></tr>
+      </thead>
+      <tbody>
+        {{range $i, $e := .Ranking}}
+        <tr class="{{if $e.Complete}}row-complete{{end}}">
+          <td>{{add $i 1}}</td>
+          <td>{{if $e.Nickname}}{{$e.Nickname}} ({{$e.Name}}){{else}}{{$e.Name}}{{end}}</td>
+          <td>{{$e.Count}} / {{$e.Total}}</td>
+          <td>{{if $e.Total}}{{pct $e.Count $e.Total}}{{else}}0{{end}}%</td>
+          <td>{{if $e.Complete}}🏆 Sim{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="hint">Nenhum participante registrado ainda.</p>
+    {{end}}
+  </div>
+
+  <!-- Quem ainda nao entrou -->
+  <div class="section">
+    <h2>Ainda não entraram ({{len .Unregistered}})</h2>
+    {{if .Unregistered}}
+    <p class="hint">Participantes ativos que ainda não escanearam a própria figurinha.</p>
+    <div class="pending-list">
+      {{range .Unregistered}}
+      <span class="pending-chip">{{if .Nickname}}{{.Nickname}}{{else}}{{.Name}}{{end}}</span>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="alert alert-success">✅ Todos os participantes ativos já entraram no jogo.</p>
+    {{end}}
+  </div>
+
+  <!-- Backup / Export -->
+  <div class="section">
+    <h2>Backup e Resultado</h2>
+    <a href="/admin/backup" class="btn btn-outline">⬇️ Baixar backup do banco</a>
+    <a href="/admin/export" class="btn btn-outline">📊 Exportar resultado (CSV)</a>
+  </div>
+</div>
+</body>
+</html>

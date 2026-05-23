@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha de QR - Copa Figurinhas</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+@media print {
+  .admin-nav, .no-print { display: none !important; }
+  body { background: white; }
+  .qr-sheet { padding: 0; }
+  .qr-item { break-inside: avoid; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body class="admin-body">
+<nav class="admin-nav no-print">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet" class="active">QR Sheet</a>
+    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <div class="section-header no-print">
+    <h1>Folha de QR Codes para impressão</h1>
+    <button onclick="window.print()" class="btn btn-primary">🖨️ Imprimir</button>
+  </div>
+
+  <div class="qr-sheet">
+    {{range .Entries}}
+    <div class="qr-item">
+      <div class="qr-sticker">
+        {{if .Participant.PhotoPath}}
+        <img src="{{.Participant.PhotoPath}}" alt="{{.Participant.Name}}" class="qr-photo">
+        {{end}}
+        <div class="qr-name">{{.Participant.Name}}</div>
+        {{if .Participant.Nickname}}<div class="qr-nickname">{{.Participant.Nickname}}</div>{{end}}
+        <img src="data:image/png;base64,{{.QRBase64}}" alt="QR" class="qr-code-img">
+        <div class="qr-url">{{.URL}}</div>
+      </div>
+    </div>
+    {{else}}
+    <p class="hint">Nenhum participante ativo cadastrado.</p>
+    {{end}}
+  </div>
+</div>
+</body>
+</html>

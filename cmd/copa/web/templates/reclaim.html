@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recuperar álbum - Copa Figurinhas</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container center">
+  <div class="card">
+    <div class="panini-logo">⚽ Copa Figurinhas 2026</div>
+    <h2>Esta figurinha já foi registrada</h2>
+    <p>A figurinha de <strong>{{.Sticker.Name}}</strong> já está vinculada a outro dispositivo.</p>
+    <p>Se você é {{.Sticker.Name}} e quer transferir seu álbum para este celular, clique abaixo:</p>
+    <form method="POST" action="/s/{{.Token}}/reclaim">
+      <button type="submit" class="btn btn-primary btn-lg">📱 Sim, sou eu — transferir para este celular</button>
+    </form>
+    <p class="hint">Seu álbum e figurinhas coletadas serão mantidos.</p>
+    <a href="/" class="btn btn-secondary" style="margin-top:1rem">Cancelar</a>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meu Álbum - Copa Figurinhas 2026</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="album-page">
+  <header class="album-header">
+    <div class="album-title">
+      <span class="ball">⚽</span>
+      <span>Copa Figurinhas 2026</span>
+    </div>
+    <div class="album-owner">
+      {{if .Owner.PhotoPath}}
+      <img src="{{.Owner.PhotoPath}}" alt="{{.Owner.Name}}" class="owner-avatar">
+      {{end}}
+      <span class="owner-name">{{if .Owner.Nickname}}{{.Owner.Nickname}}{{else}}{{.Owner.Name}}{{end}}</span>
+    </div>
+  </header>
+
+  {{if .Already}}
+  <div class="toast toast-info">Você já tem essa figurinha! 👍</div>
+  {{end}}
+
+  {{if .Complete}}
+  <div class="complete-banner">
+    🏆 ÁLBUM COMPLETO! Você coletou todos os {{.Total}} participantes!
+  </div>
+  {{end}}
+
+  <div class="album-stats">
+    <div class="stat-bar-wrap">
+      <div class="stat-label">{{.Count}} de {{.Total}} figurinhas</div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {{.Progress}}%"></div>
+      </div>
+      <div class="stat-pct">{{.Progress}}%</div>
+    </div>
+  </div>
+
+  <div class="sticker-grid">
+    {{range .Slots}}
+    <div class="sticker-slot {{if .Collected}}collected{{else}}empty{{end}}">
+      {{if .Collected}}
+        {{$p := .Participant}}
+        {{if $p.PhotoPath}}
+        <img src="{{$p.PhotoPath}}" alt="{{$p.Name}}" class="sticker-photo">
+        {{else}}
+        <div class="sticker-initials">{{slice $p.Name 0 1}}</div>
+        {{end}}
+        <div class="sticker-label">{{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}</div>
+        <div class="sticker-shine"></div>
+      {{else}}
+        <div class="sticker-mystery">?</div>
+        <div class="sticker-label empty-label">???</div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+
+  <div class="album-footer">
+    <a href="/tv" class="btn btn-outline">📺 Ver ranking</a>
+    <form method="POST" action="/logout"
+          onsubmit="return confirm('Trocar de jogador? Você vai precisar escanear sua figurinha de novo para voltar ao seu álbum.');">
+      <button type="submit" class="btn btn-outline">🔄 Trocar de jogador</button>
+    </form>
+  </div>
+</div>
+
+<script>
+// SSE for real-time updates (album completion alert)
+const evtSource = new EventSource('/sse');
+evtSource.addEventListener('complete', function(e) {
+  const data = JSON.parse(e.data);
+  const banner = document.createElement('div');
+  banner.className = 'toast toast-complete';
+  banner.textContent = '🏆 ' + data.name + ' completou o álbum!';
+  document.body.prepend(banner);
+  setTimeout(() => banner.remove(), 8000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transferir álbum - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR Sheet</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/transfer" class="active">Transferir</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+<div class="admin-content">
+  <h1>Transferir / Corrigir álbum</h1>
+  <p>Use esta função para mover todas as figurinhas coletadas de um participante para outro. Útil quando alguém escaneou a figurinha errada.</p>
+
+  {{if .Error}}
+  <div class="alert alert-error">{{.Error}}</div>
+  {{end}}
+
+  <div class="card form-card">
+    <form method="POST">
+      <div class="form-group">
+        <label>De (origem — perderá as figurinhas)</label>
+        <select name="src_id" class="form-input" required>
+          <option value="">Selecione...</option>
+          {{range .Participants}}
+          <option value="{{.ID}}">{{.Name}} {{if .Nickname}}({{.Nickname}}){{end}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Para (destino — receberá as figurinhas)</label>
+        <select name="dst_id" class="form-input" required>
+          <option value="">Selecione...</option>
+          {{range .Participants}}
+          <option value="{{.ID}}">{{.Name}} {{if .Nickname}}({{.Nickname}}){{end}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Transferir todo o álbum? Esta ação não pode ser desfeita facilmente.')">Transferir álbum</button>
+        <a href="/admin/dashboard" class="btn btn-outline">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>
