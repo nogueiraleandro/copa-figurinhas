@@ -199,6 +199,26 @@ func TestAdminAISettingsSaved(t *testing.T) {
 	}
 }
 
+func TestAdminAISettingsRejectsTextModel(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.PostForm(srv.URL+"/admin/settings", url.Values{
+		"base_url": {"http://localhost:8080"},
+		"ai_model": {"gemini-3.1-pro-preview"},
+	})
+	if err != nil {
+		t.Fatalf("settings ai model: %v", err)
+	}
+	resp.Body.Close()
+
+	set, _ := store.GetSetting()
+	if set.AIModel != "gemini-3.1-flash-image-preview" {
+		t.Fatalf("modelo sem image deveria voltar ao default, got %q", set.AIModel)
+	}
+}
+
 func TestAdminUseAIWithoutKeyFallsBackToOriginalPhoto(t *testing.T) {
 	srv, store := newAdminTestServer(t)
 	client := adminClient(t)

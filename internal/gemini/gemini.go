@@ -14,7 +14,7 @@ import (
 )
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-const defaultModel = "gemini-2.5-flash-image"
+const defaultModel = "gemini-3.1-flash-image-preview"
 
 // Client calls the Gemini generateContent image endpoint.
 type Client struct {
@@ -45,7 +45,7 @@ func (c *Client) StyleImage(ctx context.Context, photo []byte, photoMime string,
 	}
 	httpClient := c.HTTP
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
+		httpClient = &http.Client{Timeout: 180 * time.Second}
 	}
 
 	parts := []map[string]interface{}{

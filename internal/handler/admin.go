@@ -31,8 +31,8 @@ import (
 )
 
 const adminCookieName = "copa_admin"
-const defaultAIModel = "gemini-2.5-flash-image"
-const defaultAIPrompt = "Transforme a foto em uma figurinha no mesmo estilo da figurinha modelo. Preserve a identidade, rosto, expressao e caracteristicas principais da pessoa. Use composicao limpa, aparencia de figurinha colecionavel, cores vivas, acabamento profissional e fundo compatível com o modelo."
+const defaultAIModel = "gemini-3.1-flash-image-preview"
+const defaultAIPrompt = "Transforme a foto em uma figurinha no mesmo estilo da figurinha modelo. Preserve a identidade, rosto, expressao e caracteristicas principais da pessoa. Use composicao limpa, aparencia de figurinha colecionavel, cores vivas, acabamento profissional e fundo compativel com o modelo. Nao copie nomes, datas, medidas ou textos da figurinha modelo."
 
 // AdminHandler handles /admin routes.
 type AdminHandler struct {
@@ -386,7 +386,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 				if !strings.HasPrefix(photoMime, "image/") {
 					photoMime = http.DetectContentType(data)
 				}
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime); ok {
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime, name); ok {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -441,7 +441,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 				if !strings.HasPrefix(photoMime, "image/") {
 					photoMime = http.DetectContentType(data)
 				}
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime); ok {
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime, p.Name); ok {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -501,26 +501,28 @@ func (h *AdminHandler) aiConfigured() bool {
 	return err == nil && strings.TrimSpace(setting.GeminiAPIKey) != ""
 }
 
-func (h *AdminHandler) styleWithAI(photo []byte, photoMime string) ([]byte, string, bool) {
+func (h *AdminHandler) styleWithAI(photo []byte, photoMime, participantName string) ([]byte, string, bool) {
 	setting, err := h.store.GetSetting()
 	if err != nil || strings.TrimSpace(setting.GeminiAPIKey) == "" {
 		return nil, "", false
 	}
 	model := strings.TrimSpace(setting.AIModel)
-	if model == "" {
-		model = defaultAIModel
-	}
+	model = normalizeAIModel(model)
 	prompt := strings.TrimSpace(setting.AIPrompt)
 	if prompt == "" {
 		prompt = defaultAIPrompt
+	}
+	participantName = strings.TrimSpace(participantName)
+	if participantName != "" {
+		prompt += "\n\nNome correto da pessoa: " + participantName + ". Se a figurinha gerada tiver texto de nome, use exatamente esse nome. Nao invente sobrenomes, datas, altura, peso, selecao ou estatisticas."
 	}
 	ref, refMime := h.loadAIReference(setting.AIReferencePath)
 	client := &gemini.Client{
 		APIKey: setting.GeminiAPIKey,
 		Model:  model,
-		HTTP:   &http.Client{Timeout: 60 * time.Second},
+		HTTP:   &http.Client{Timeout: 180 * time.Second},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 190*time.Second)
 	defer cancel()
 	out, outMime, err := client.StyleImage(ctx, photo, photoMime, ref, refMime, prompt)
 	if err != nil {
@@ -557,6 +559,14 @@ func extForMime(mimeType string) string {
 	default:
 		return ".jpg"
 	}
+}
+
+func normalizeAIModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" || !strings.Contains(strings.ToLower(model), "image") {
+		return defaultAIModel
+	}
+	return model
 }
 
 func redirectWithAIWarn(w http.ResponseWriter, r *http.Request, target string, aiWarn bool) {
@@ -757,9 +767,7 @@ func (h *AdminHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		setting.GeminiAPIKey = key
 	}
 	setting.AIModel = strings.TrimSpace(r.FormValue("ai_model"))
-	if setting.AIModel == "" {
-		setting.AIModel = defaultAIModel
-	}
+	setting.AIModel = normalizeAIModel(setting.AIModel)
 	setting.AIPrompt = strings.TrimSpace(r.FormValue("ai_prompt"))
 	if file, header, ferr := r.FormFile("ai_reference"); ferr == nil {
 		defer file.Close()

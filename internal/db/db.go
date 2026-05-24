@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS setting (
     roster_locked        INTEGER NOT NULL DEFAULT 0,
     admin_password_hash  TEXT    NOT NULL DEFAULT '',
     gemini_api_key       TEXT    NOT NULL DEFAULT '',
-    ai_model             TEXT    NOT NULL DEFAULT 'gemini-2.5-flash-image',
+    ai_model             TEXT    NOT NULL DEFAULT 'gemini-3.1-flash-image-preview',
     ai_prompt            TEXT    NOT NULL DEFAULT '',
     ai_reference_path    TEXT    NOT NULL DEFAULT ''
 );
@@ -99,7 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_device_cookie ON device(cookie_token);
 	}
 	for _, stmt := range []string{
 		`ALTER TABLE setting ADD COLUMN gemini_api_key TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE setting ADD COLUMN ai_model TEXT NOT NULL DEFAULT 'gemini-2.5-flash-image'`,
+		`ALTER TABLE setting ADD COLUMN ai_model TEXT NOT NULL DEFAULT 'gemini-3.1-flash-image-preview'`,
 		`ALTER TABLE setting ADD COLUMN ai_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE setting ADD COLUMN ai_reference_path TEXT NOT NULL DEFAULT ''`,
 	} {

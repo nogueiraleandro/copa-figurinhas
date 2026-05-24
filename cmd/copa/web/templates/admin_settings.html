@@ -59,7 +59,12 @@
       </div>
       <div class="form-group">
         <label>Modelo</label>
-        <input type="text" name="ai_model" class="form-input" value="{{if .Setting.AIModel}}{{.Setting.AIModel}}{{else}}gemini-2.5-flash-image{{end}}">
+        <select name="ai_model" class="form-input">
+          <option value="gemini-3.1-flash-image-preview" {{if eq .Setting.AIModel "gemini-3.1-flash-image-preview"}}selected{{end}}>gemini-3.1-flash-image-preview</option>
+          <option value="gemini-3-pro-image-preview" {{if eq .Setting.AIModel "gemini-3-pro-image-preview"}}selected{{end}}>gemini-3-pro-image-preview</option>
+          <option value="gemini-2.5-flash-image" {{if eq .Setting.AIModel "gemini-2.5-flash-image"}}selected{{end}}>gemini-2.5-flash-image</option>
+        </select>
+        <span class="hint">Modelos sem "image" no nome podem responder texto e nao gerar figurinha.</span>
       </div>
       <div class="form-group">
         <label>Prompt de estilo</label>

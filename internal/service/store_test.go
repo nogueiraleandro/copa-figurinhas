@@ -435,7 +435,7 @@ func TestRestoreFromOldBackupWithoutAIColumns(t *testing.T) {
 	if set.BaseURL != "http://192.168.0.50:8080" || set.AdminPasswordHash != "hash-antigo" {
 		t.Fatalf("campos antigos nao restauraram: %#v", set)
 	}
-	if set.AIModel != "gemini-2.5-flash-image" || set.GeminiAPIKey != "" || set.AIPrompt != "" || set.AIReferencePath != "" {
+	if set.AIModel != "gemini-3.1-flash-image-preview" || set.GeminiAPIKey != "" || set.AIPrompt != "" || set.AIReferencePath != "" {
 		t.Fatalf("campos novos deveriam ficar com defaults: %#v", set)
 	}
 }

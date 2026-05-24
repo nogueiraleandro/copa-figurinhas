@@ -13,7 +13,7 @@ import (
 func TestStyleImageDecodesInlineImage(t *testing.T) {
 	img := []byte{0x89, 0x50, 0x4e, 0x47}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/models/gemini-2.5-flash-image:generateContent" {
+		if r.URL.Path != "/models/gemini-3.1-flash-image-preview:generateContent" {
 			t.Fatalf("path inesperado: %s", r.URL.Path)
 		}
 		if r.URL.Query().Get("key") != "key-123" {
