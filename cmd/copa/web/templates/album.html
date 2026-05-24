@@ -43,13 +43,14 @@
 
   <div class="sticker-grid">
     {{range .Slots}}
-    <div class="sticker-slot {{if .Collected}}collected{{else}}empty{{end}}">
+    {{$p := .Participant}}
+    <div class="sticker-slot {{if .Collected}}collected{{else}}empty{{end}}"
+         {{if .Collected}}data-name="{{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}" data-photo="{{$p.PhotoPath}}" {{if not $p.PhotoPath}}data-initial="{{initial $p.Name}}"{{end}} role="button" tabindex="0" aria-label="Abrir figurinha de {{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}"{{end}}>
       {{if .Collected}}
-        {{$p := .Participant}}
         {{if $p.PhotoPath}}
         <img src="{{$p.PhotoPath}}" alt="{{$p.Name}}" class="sticker-photo">
         {{else}}
-        <div class="sticker-initials">{{slice $p.Name 0 1}}</div>
+        <div class="sticker-initials">{{initial $p.Name}}</div>
         {{end}}
         <div class="sticker-label">{{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}</div>
         <div class="sticker-shine"></div>
@@ -68,9 +69,90 @@
       <button type="submit" class="btn btn-outline">🔄 Trocar de jogador</button>
     </form>
   </div>
+
+  <div id="stickerModal" class="sticker-modal hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <button class="sticker-modal-close" type="button" aria-label="Fechar" tabindex="-1">&#10005;</button>
+    <div class="sticker-modal-card">
+      <div class="sticker-modal-shine"></div>
+      <div id="modalMedia"></div>
+      <div id="modalName" class="sticker-modal-name"></div>
+    </div>
+  </div>
 </div>
 
+<script src="/static/mascote.js"></script>
 <script>
+// ── Gamification: progress bar animation + milestone confetti ──────────────
+(function() {
+  var progress  = {{.Progress}};
+  var isAlready = {{if .Already}}true{{else}}false{{end}};
+  var isComplete = {{if .Complete}}true{{else}}false{{end}};
+  // Use owner id/name as localStorage key so milestones are per-person
+  var ownerKey  = 'copa_milestones_{{if .Owner.Name}}{{.Owner.Name}}{{else}}guest{{end}}';
+
+  // Animate progress bar from 0 to target width on load
+  document.addEventListener('DOMContentLoaded', function() {
+    var fill = document.querySelector('.progress-fill');
+    if (fill) {
+      fill.style.width = '0%';
+      // Force reflow then animate
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          fill.style.width = progress + '%';
+        });
+      });
+    }
+
+    // Stagger wiggle delays on empty slots so they don't all animate in sync
+    var emptySlots = document.querySelectorAll('.sticker-slot.empty');
+    emptySlots.forEach(function(slot, i) {
+      slot.style.setProperty('--wiggle-delay', (i * 0.37 % 4).toFixed(2));
+    });
+
+    // Milestone confetti (25/50/75/100%) — fire once per milestone per owner
+    if (!isAlready) { // don't fire on repeated-sticker reload noise
+      var milestones = [25, 50, 75, 100];
+      var celebrated = JSON.parse(localStorage.getItem(ownerKey) || '[]');
+      var newCelebrated = celebrated.slice();
+      var toFire = [];
+
+      milestones.forEach(function(m) {
+        if (progress >= m && celebrated.indexOf(m) === -1) {
+          newCelebrated.push(m);
+          toFire.push(m);
+        }
+      });
+
+      if (toFire.length > 0) {
+        localStorage.setItem(ownerKey, JSON.stringify(newCelebrated));
+        // Delay slightly so bar animation is visible first
+        setTimeout(function() {
+          if (isComplete || toFire.indexOf(100) !== -1) {
+            if (typeof trophyBurst === 'function') trophyBurst();
+            if (typeof mascotPlay === 'function') mascotPlay('complete');
+          } else {
+            if (typeof confettiBurst === 'function') confettiBurst();
+          }
+        }, 1400);
+      }
+    }
+
+    // Already-collected reaction
+    if (isAlready) {
+      setTimeout(function() {
+        if (typeof mascotPlay === 'function') mascotPlay('repeat');
+      }, 600);
+    }
+
+    // Complete trophy (even without new milestone, ensure trophy plays)
+    if (isComplete && !isAlready) {
+      setTimeout(function() {
+        if (typeof mascotPlay === 'function') mascotPlay('complete');
+      }, 600);
+    }
+  });
+})();
+
 // SSE for real-time updates (album completion alert)
 const evtSource = new EventSource('/sse');
 evtSource.addEventListener('complete', function(e) {
@@ -80,6 +162,98 @@ evtSource.addEventListener('complete', function(e) {
   banner.textContent = '🏆 ' + data.name + ' completou o álbum!';
   document.body.prepend(banner);
   setTimeout(() => banner.remove(), 8000);
+});
+
+const stickerGrid = document.querySelector('.sticker-grid');
+const stickerModal = document.getElementById('stickerModal');
+const modalMedia = document.getElementById('modalMedia');
+const modalName = document.getElementById('modalName');
+const modalClose = stickerModal.querySelector('.sticker-modal-close');
+let lastStickerFocus = null;
+
+function openStickerModal(slot) {
+  const name = slot.dataset.name || '';
+  const photo = slot.dataset.photo || '';
+  const initial = slot.dataset.initial || (name.trim().charAt(0).toUpperCase() || '?');
+
+  modalMedia.replaceChildren();
+
+  if (photo) {
+    const image = document.createElement('img');
+    image.src = photo;
+    image.alt = name;
+    image.className = 'sticker-modal-photo';
+    modalMedia.append(image);
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'sticker-modal-placeholder';
+    placeholder.textContent = initial;
+    modalMedia.append(placeholder);
+  }
+
+  modalName.textContent = name;
+  lastStickerFocus = document.activeElement;
+  stickerModal.classList.remove('hidden', 'is-open');
+  stickerModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  modalClose.tabIndex = 0;
+
+  void stickerModal.offsetWidth;
+  stickerModal.classList.add('is-open');
+  modalClose.focus({preventScroll: true});
+}
+
+function closeStickerModal() {
+  if (stickerModal.classList.contains('hidden')) {
+    return;
+  }
+
+  stickerModal.classList.remove('is-open');
+  stickerModal.classList.add('hidden');
+  stickerModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+  modalClose.tabIndex = -1;
+  modalMedia.replaceChildren();
+  modalName.textContent = '';
+
+  if (lastStickerFocus && typeof lastStickerFocus.focus === 'function') {
+    lastStickerFocus.focus({preventScroll: true});
+  }
+}
+
+stickerGrid.addEventListener('click', function(event) {
+  const slot = event.target.closest('.sticker-slot.collected');
+  if (!slot || !stickerGrid.contains(slot)) {
+    return;
+  }
+
+  openStickerModal(slot);
+});
+
+stickerGrid.addEventListener('keydown', function(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') {
+    return;
+  }
+
+  const slot = event.target.closest('.sticker-slot.collected');
+  if (!slot || !stickerGrid.contains(slot)) {
+    return;
+  }
+
+  event.preventDefault();
+  openStickerModal(slot);
+});
+
+stickerModal.addEventListener('click', function(event) {
+  if (event.target === stickerModal || event.target.closest('.sticker-modal-close')) {
+    closeStickerModal();
+  }
+});
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    closeStickerModal();
+  }
 });
 </script>
 </body>

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"copa/internal/service"
 	"copa/internal/sse"
@@ -124,10 +125,19 @@ func (h *RevealHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	photo := r.URL.Query().Get("photo")
 	complete := r.URL.Query().Get("complete") == "1"
 
+	// Inicial para o caso sem foto (reveal.html usa {{.Initial}}). Primeiro rune,
+	// seguro para nomes vazios/acentuados.
+	initial := ""
+	for _, ru := range strings.TrimSpace(name) {
+		initial = strings.ToUpper(string(ru))
+		break
+	}
+
 	h.tmpl.Render(w, "reveal.html", map[string]interface{}{
 		"Name":     name,
 		"Photo":    photo,
 		"Complete": complete,
+		"Initial":  initial,
 	})
 }
 

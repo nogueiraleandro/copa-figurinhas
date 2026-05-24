@@ -26,14 +26,33 @@
   </div>
 </div>
 <script>
-// Trigger animation after load
+var isComplete = {{if .Complete}}true{{else}}false{{end}};
+
+// Trigger card stamp animation after load, then fire mascot celebrations
 window.addEventListener('load', function() {
-  document.getElementById('revealCard').classList.add('animate');
-  // Auto-redirect to album after 4 seconds
+  var card = document.getElementById('revealCard');
+  // Use stamp keyframe (squash & stretch)
+  card.classList.add('stamp');
+  // Also keep legacy .animate for existing CSS transition baseline
+  card.classList.add('animate');
+
+  // Mascot & confetti fire after stamp lands (~650ms)
+  setTimeout(function() {
+    if (isComplete) {
+      if (typeof trophyBurst === 'function') trophyBurst();
+      if (typeof mascotPlay === 'function') mascotPlay('complete');
+    } else {
+      if (typeof confettiBurst === 'function') confettiBurst();
+      if (typeof mascotPlay === 'function') mascotPlay('collect');
+    }
+  }, 700);
+
+  // Auto-redirect to album after 5 seconds (extended for animations)
   setTimeout(function() {
     window.location.href = '/album';
-  }, 4000);
+  }, 5000);
 });
 </script>
+<script src="/static/mascote.js"></script>
 </body>
 </html>
