@@ -41,6 +41,27 @@
         <input type="text" name="nickname" class="form-input" value="{{if .Participant}}{{.Participant.Nickname}}{{end}}">
       </div>
       <div class="form-group">
+        <label>Time</label>
+        <input type="text" name="team" class="form-input" placeholder="PALMEIRAS (BR)" value="{{if .Participant}}{{.Participant.Team}}{{end}}">
+      </div>
+      {{$useFrase := false}}
+      {{if .Participant}}{{if .Participant.Phrase}}{{$useFrase = true}}{{end}}{{end}}
+      <div class="form-group">
+        <label>Linha de dados</label>
+        <div style="margin-bottom:0.5rem">
+          <label style="font-weight:normal;margin-right:1rem"><input type="radio" name="linha_modo" value="medidas" {{if not $useFrase}}checked{{end}}> Data / Altura / Kg</label>
+          <label style="font-weight:normal"><input type="radio" name="linha_modo" value="frase" {{if $useFrase}}checked{{end}}> Frase</label>
+        </div>
+        <div id="linha-medidas" style="display:flex;gap:0.5rem;flex-wrap:wrap;{{if $useFrase}}display:none{{end}}">
+          <input type="text" name="info_date" class="form-input" style="flex:1;min-width:90px" placeholder="Data (13/06)" value="{{if .Participant}}{{.Participant.InfoDate}}{{end}}">
+          <input type="text" name="height" class="form-input" style="flex:1;min-width:90px" placeholder="Altura (1,75m)" value="{{if .Participant}}{{.Participant.Height}}{{end}}">
+          <input type="text" name="weight" class="form-input" style="flex:1;min-width:90px" placeholder="Kg (78kg)" value="{{if .Participant}}{{.Participant.Weight}}{{end}}">
+        </div>
+        <div id="linha-frase" style="{{if not $useFrase}}display:none{{end}}">
+          <input type="text" name="phrase" class="form-input" maxlength="25" placeholder="Frase (máx 25 caracteres)" value="{{if .Participant}}{{.Participant.Phrase}}{{end}}">
+        </div>
+      </div>
+      <div class="form-group">
         <label>Foto (JPG/PNG)</label>
         {{if .Participant}}{{if .Participant.PhotoPath}}
         <div style="margin-bottom:0.5rem">
@@ -51,12 +72,35 @@
         <input type="file" name="photo" class="form-input" accept="image/*">
       </div>
       <div class="form-group">
+        <label>2ª foto (opcional — outro ângulo da mesma pessoa)</label>
+        <input type="file" name="photo2" class="form-input" accept="image/*">
+        <span class="hint">Ajuda a IA a captar melhor o rosto. Usada só na geração com IA.</span>
+      </div>
+      <div class="form-group">
         {{if .AIEnabled}}
         <label>
           <input type="checkbox" name="use_ai">
           Gerar figurinha com IA (Google Gemini)
         </label>
         <span class="hint">Usa a chave, o prompt e a figurinha modelo configurados em Config. Se falhar, salva a foto original.</span>
+        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+          <select name="faixa" class="form-input" style="flex:1;min-width:120px">
+            <option value="">Faixa etária —</option>
+            <option value="adulto">Adulto</option>
+            <option value="crianca">Criança</option>
+          </select>
+          <select name="genero" class="form-input" style="flex:1;min-width:120px">
+            <option value="">Gênero —</option>
+            <option value="masculino">Masculino</option>
+            <option value="feminino">Feminino</option>
+          </select>
+          <select name="enquadramento" class="form-input" style="flex:1;min-width:120px">
+            <option value="">Enquadramento —</option>
+            <option value="peitoral">Peitoral</option>
+            <option value="corpo">Corpo inteiro</option>
+          </select>
+        </div>
+        <span class="hint">Ajustes rápidos aplicados ao prompt só nesta geração.</span>
         {{else}}
         <span class="hint">Para gerar figurinhas com IA, configure a chave do Gemini em <a href="/admin/settings">Config</a>.</span>
         {{end}}
@@ -76,5 +120,34 @@
     </form>
   </div>
 </div>
+
+<div id="ai-loading" class="ai-loading-overlay">
+  <div class="ai-spinner"></div>
+  <div class="ai-loading-text">Gerando figurinha… pode levar até ~1 min</div>
+  <div class="ai-loading-counter"><span id="ai-counter">0s</span> — não feche esta página</div>
+</div>
+
+<script>
+(function () {
+  document.querySelectorAll('input[name="linha_modo"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      document.getElementById('linha-medidas').style.display = (this.value === 'medidas') ? 'flex' : 'none';
+      document.getElementById('linha-frase').style.display = (this.value === 'frase') ? '' : 'none';
+    });
+  });
+
+  var form = document.querySelector('form');
+  if (form) {
+    form.addEventListener('submit', function () {
+      var ai = document.querySelector('input[name="use_ai"]');
+      if (ai && ai.checked) {
+        document.getElementById('ai-loading').classList.add('show');
+        var s = 0, counter = document.getElementById('ai-counter');
+        setInterval(function () { s++; counter.textContent = s + 's'; }, 1000);
+      }
+    });
+  }
+})();
+</script>
 </body>
 </html>
