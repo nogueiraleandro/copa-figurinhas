@@ -24,8 +24,9 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-// StyleImage sends the source photo, optional style reference, and prompt to Gemini.
-func (c *Client) StyleImage(ctx context.Context, photo []byte, photoMime string, ref []byte, refMime, prompt string) ([]byte, string, error) {
+// StyleImage sends the source photo, an optional second photo of the same person,
+// an optional style reference, and the prompt to Gemini.
+func (c *Client) StyleImage(ctx context.Context, photo []byte, photoMime string, photo2 []byte, photo2Mime string, ref []byte, refMime, prompt string) ([]byte, string, error) {
 	if strings.TrimSpace(c.APIKey) == "" {
 		return nil, "", fmt.Errorf("gemini api key vazia")
 	}
@@ -54,6 +55,17 @@ func (c *Client) StyleImage(ctx context.Context, photo []byte, photoMime string,
 			"mime_type": photoMime,
 			"data":      base64.StdEncoding.EncodeToString(photo),
 		}},
+	}
+	if len(photo2) > 0 {
+		if strings.TrimSpace(photo2Mime) == "" {
+			photo2Mime = http.DetectContentType(photo2)
+		}
+		parts = append(parts, map[string]interface{}{
+			"inline_data": map[string]string{
+				"mime_type": photo2Mime,
+				"data":      base64.StdEncoding.EncodeToString(photo2),
+			},
+		})
 	}
 	if len(ref) > 0 {
 		if strings.TrimSpace(refMime) == "" {

@@ -30,7 +30,7 @@ func TestStyleImageDecodesInlineImage(t *testing.T) {
 	defer srv.Close()
 
 	client := &Client{APIKey: "key-123", BaseURL: srv.URL}
-	out, mime, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", "prompt")
+	out, mime, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", nil, "", "prompt")
 	if err != nil {
 		t.Fatalf("StyleImage: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestStyleImageErrorsOnBadStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := &Client{APIKey: "key", BaseURL: srv.URL}
-	_, _, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", "prompt")
+	_, _, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", nil, "", "prompt")
 	if err == nil || !strings.Contains(err.Error(), "429") {
 		t.Fatalf("esperava erro com status, got %v", err)
 	}
@@ -60,7 +60,7 @@ func TestStyleImageErrorsWithoutImage(t *testing.T) {
 	defer srv.Close()
 
 	client := &Client{APIKey: "key", BaseURL: srv.URL}
-	_, _, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", "prompt")
+	_, _, err := client.StyleImage(context.Background(), []byte("photo"), "image/jpeg", nil, "", nil, "", "prompt")
 	if err == nil || !strings.Contains(err.Error(), "nao retornou imagem") {
 		t.Fatalf("esperava erro sem imagem, got %v", err)
 	}

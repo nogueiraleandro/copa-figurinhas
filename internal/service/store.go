@@ -103,18 +103,18 @@ func (s *Store) CreateParticipant(name, nickname, photoPath string) (*model.Part
 
 func (s *Store) GetParticipantByToken(token string) (*model.Participant, error) {
 	return s.scanParticipant(s.db.QueryRow(
-		`SELECT id, token, name, nickname, photo_path, active, claimed_device_id, created_at
+		`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
 		 FROM participant WHERE token=?`, token))
 }
 
 func (s *Store) GetParticipantByID(id int64) (*model.Participant, error) {
 	return s.scanParticipant(s.db.QueryRow(
-		`SELECT id, token, name, nickname, photo_path, active, claimed_device_id, created_at
+		`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
 		 FROM participant WHERE id=?`, id))
 }
 
 func (s *Store) ListParticipants() ([]*model.Participant, error) {
-	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, active, claimed_device_id, created_at
+	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
 		FROM participant ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func (s *Store) ListParticipants() ([]*model.Participant, error) {
 }
 
 func (s *Store) ListActiveParticipants() ([]*model.Participant, error) {
-	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, active, claimed_device_id, created_at
+	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
 		FROM participant WHERE active=1 ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -156,8 +156,8 @@ func (s *Store) CountActiveParticipants() (int, error) {
 }
 
 func (s *Store) UpdateParticipant(p *model.Participant) error {
-	_, err := s.db.Exec(`UPDATE participant SET name=?, nickname=?, photo_path=?, active=? WHERE id=?`,
-		p.Name, p.Nickname, p.PhotoPath, boolToInt(p.Active), p.ID)
+	_, err := s.db.Exec(`UPDATE participant SET name=?, nickname=?, photo_path=?, team=?, info_date=?, height=?, weight=?, phrase=?, active=? WHERE id=?`,
+		p.Name, p.Nickname, p.PhotoPath, p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase, boolToInt(p.Active), p.ID)
 	return err
 }
 
@@ -171,7 +171,7 @@ func (s *Store) scanParticipant(row *sql.Row) (*model.Participant, error) {
 	var deviceID sql.NullInt64
 	var createdStr string
 	var activeInt int
-	err := row.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &activeInt, &deviceID, &createdStr)
+	err := row.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -191,7 +191,7 @@ func (s *Store) scanParticipantRow(rows *sql.Rows) (*model.Participant, error) {
 	var deviceID sql.NullInt64
 	var createdStr string
 	var activeInt int
-	err := rows.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &activeInt, &deviceID, &createdStr)
+	err := rows.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr)
 	if err != nil {
 		return nil, err
 	}

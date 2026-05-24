@@ -375,6 +375,12 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	p := &model.Participant{Name: name, Nickname: nickname}
+	applyParticipantTextFields(p, r)
+	faixa := strings.TrimSpace(r.FormValue("faixa"))
+	genero := strings.TrimSpace(r.FormValue("genero"))
+	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
+
 	photoPath := ""
 	aiWarn := false
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
@@ -386,7 +392,8 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 				if !strings.HasPrefix(photoMime, "image/") {
 					photoMime = http.DetectContentType(data)
 				}
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime, name); ok {
+				photo2, photo2Mime := readFormImage(r, "photo2")
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); ok {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -397,10 +404,14 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	_, err := h.store.CreateParticipant(name, nickname, photoPath)
+	created, err := h.store.CreateParticipant(p.Name, p.Nickname, photoPath)
 	if err != nil {
 		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarn))
 		return
+	}
+	created.Team, created.InfoDate, created.Height, created.Weight, created.Phrase = p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase
+	if err := h.store.UpdateParticipant(created); err != nil {
+		log.Printf("falha ao salvar campos extras do participante: %v", err)
 	}
 
 	h.broadcastRanking()
@@ -430,6 +441,10 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	p.Name = strings.TrimSpace(r.FormValue("name"))
 	p.Nickname = strings.TrimSpace(r.FormValue("nickname"))
 	p.Active = r.FormValue("active") == "on"
+	applyParticipantTextFields(p, r)
+	faixa := strings.TrimSpace(r.FormValue("faixa"))
+	genero := strings.TrimSpace(r.FormValue("genero"))
+	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
 
 	aiWarn := false
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
@@ -441,7 +456,8 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 				if !strings.HasPrefix(photoMime, "image/") {
 					photoMime = http.DetectContentType(data)
 				}
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime, p.Name); ok {
+				photo2, photo2Mime := readFormImage(r, "photo2")
+				if styled, styledMime, ok := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); ok {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -501,7 +517,7 @@ func (h *AdminHandler) aiConfigured() bool {
 	return err == nil && strings.TrimSpace(setting.GeminiAPIKey) != ""
 }
 
-func (h *AdminHandler) styleWithAI(photo []byte, photoMime, participantName string) ([]byte, string, bool) {
+func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte, photo2Mime string, p *model.Participant, faixa, genero, enquadramento string) ([]byte, string, bool) {
 	setting, err := h.store.GetSetting()
 	if err != nil || strings.TrimSpace(setting.GeminiAPIKey) == "" {
 		return nil, "", false
@@ -512,10 +528,7 @@ func (h *AdminHandler) styleWithAI(photo []byte, photoMime, participantName stri
 	if prompt == "" {
 		prompt = defaultAIPrompt
 	}
-	participantName = strings.TrimSpace(participantName)
-	if participantName != "" {
-		prompt += "\n\nNome correto da pessoa: " + participantName + ". Se a figurinha gerada tiver texto de nome, use exatamente esse nome. Nao invente sobrenomes, datas, altura, peso, selecao ou estatisticas."
-	}
+	prompt += buildStickerTextPrompt(p) + buildModifiersPrompt(faixa, genero, enquadramento)
 	ref, refMime := h.loadAIReference(setting.AIReferencePath)
 	client := &gemini.Client{
 		APIKey: setting.GeminiAPIKey,
@@ -524,12 +537,99 @@ func (h *AdminHandler) styleWithAI(photo []byte, photoMime, participantName stri
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 190*time.Second)
 	defer cancel()
-	out, outMime, err := client.StyleImage(ctx, photo, photoMime, ref, refMime, prompt)
+	out, outMime, err := client.StyleImage(ctx, photo, photoMime, photo2, photo2Mime, ref, refMime, prompt)
 	if err != nil {
 		log.Printf("gemini image generation failed: %v", err)
 		return nil, "", false
 	}
 	return out, outMime, true
+}
+
+// buildStickerTextPrompt monta o trecho que instrui o Gemini a escrever, com
+// exatidao, os textos da figurinha (nome, linha de dados ou frase, time).
+func buildStickerTextPrompt(p *model.Participant) string {
+	nome := strings.TrimSpace(p.Nickname)
+	if nome == "" {
+		nome = strings.TrimSpace(p.Name)
+	}
+	dados := strings.TrimSpace(p.Phrase)
+	if dados == "" {
+		var parts []string
+		for _, v := range []string{p.InfoDate, p.Height, p.Weight} {
+			if s := strings.TrimSpace(v); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		dados = strings.Join(parts, " | ")
+	}
+	var b strings.Builder
+	b.WriteString("\n\nEscreva na figurinha EXATAMENTE estes textos, sem traduzir, sem inventar e com acentuacao correta:")
+	if nome != "" {
+		b.WriteString("\nNome (em destaque): «" + nome + "»")
+	}
+	if dados != "" {
+		b.WriteString("\nLinha de dados: «" + dados + "»")
+	}
+	if team := strings.TrimSpace(p.Team); team != "" {
+		b.WriteString("\nTime: «TIME: " + team + "»")
+	}
+	b.WriteString("\nNao adicione outros textos, numeros, datas, alturas, pesos, selecoes ou estatisticas alem dos listados acima.")
+	return b.String()
+}
+
+// buildModifiersPrompt converte os seletores rapidos do formulario em instrucoes.
+func buildModifiersPrompt(faixa, genero, enquadramento string) string {
+	var pessoa []string
+	switch faixa {
+	case "adulto":
+		pessoa = append(pessoa, "adulto")
+	case "crianca":
+		pessoa = append(pessoa, "crianca")
+	}
+	switch genero {
+	case "masculino":
+		pessoa = append(pessoa, "masculino")
+	case "feminino":
+		pessoa = append(pessoa, "feminino")
+	}
+	var b strings.Builder
+	if len(pessoa) > 0 {
+		b.WriteString("\n\nPessoa: " + strings.Join(pessoa, ", ") + ".")
+	}
+	switch enquadramento {
+	case "peitoral":
+		b.WriteString(" Enquadramento: do peito para cima (busto).")
+	case "corpo":
+		b.WriteString(" Enquadramento: corpo inteiro.")
+	}
+	return b.String()
+}
+
+// applyParticipantTextFields le os campos de texto da figurinha do formulario.
+func applyParticipantTextFields(p *model.Participant, r *http.Request) {
+	p.Team = strings.TrimSpace(r.FormValue("team"))
+	p.InfoDate = strings.TrimSpace(r.FormValue("info_date"))
+	p.Height = strings.TrimSpace(r.FormValue("height"))
+	p.Weight = strings.TrimSpace(r.FormValue("weight"))
+	p.Phrase = strings.TrimSpace(r.FormValue("phrase"))
+}
+
+// readFormImage le um arquivo de imagem opcional do formulario. Retorna nil se ausente.
+func readFormImage(r *http.Request, field string) ([]byte, string) {
+	file, header, err := r.FormFile(field)
+	if err != nil {
+		return nil, ""
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		return nil, ""
+	}
+	mime := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		mime = http.DetectContentType(data)
+	}
+	return data, mime
 }
 
 func (h *AdminHandler) loadAIReference(webPath string) ([]byte, string) {

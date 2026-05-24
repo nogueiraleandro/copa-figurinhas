@@ -9,6 +9,11 @@ type Participant struct {
 	Name            string
 	Nickname        string
 	PhotoPath       string
+	Team            string // ex: "PALMEIRAS (BR)" — escrito na figurinha
+	InfoDate        string // DATA da linha de dados
+	Height          string // ALTURA da linha de dados
+	Weight          string // Kg da linha de dados
+	Phrase          string // frase alternativa à linha de dados (<=25 chars)
 	Active          bool
 	ClaimedDeviceID *int64
 	CreatedAt       time.Time

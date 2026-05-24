@@ -102,6 +102,11 @@ CREATE INDEX IF NOT EXISTS idx_device_cookie ON device(cookie_token);
 		`ALTER TABLE setting ADD COLUMN ai_model TEXT NOT NULL DEFAULT 'gemini-3.1-flash-image-preview'`,
 		`ALTER TABLE setting ADD COLUMN ai_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE setting ADD COLUMN ai_reference_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN team TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN info_date TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN height TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN weight TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN phrase TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
