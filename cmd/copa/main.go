@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"copa/internal/config"
 	"copa/internal/db"
 	"copa/internal/handler"
 	"copa/internal/service"
@@ -67,6 +68,7 @@ func main() {
 	// SSE hub + notifier (broadcast de ranking com throttle)
 	hub := sse.NewHub()
 	notifier := handler.NewNotifier(store, hub)
+	defer notifier.Close() // Graceful shutdown of notifier
 
 	// Templates from embedded FS
 	webSubFS, err := fs.Sub(webFS, "web")
@@ -80,7 +82,7 @@ func main() {
 
 	// Periodic backup (every 30 min)
 	go func() {
-		ticker := time.NewTicker(30 * time.Minute)
+		ticker := time.NewTicker(config.BackupInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			backupDB(store, dataDir)
@@ -91,7 +93,10 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Static files
-	staticFS, _ := fs.Sub(webSubFS, "static")
+	staticFS, err := fs.Sub(webSubFS, "static")
+	if err != nil {
+		log.Fatal("static fs sub:", err)
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	// Uploads (photos)
@@ -132,8 +137,9 @@ func main() {
 	mux.Handle("GET /tv", tvH)
 
 	// Admin
-	addr := ":8080"
+	addr := config.DefaultListenAddr
 	adminH := handler.NewAdminHandler(store, hub, tmpl, uploadsDir, dataDir, addr, notifier)
+	defer adminH.Close() // Graceful shutdown of admin handler (cleanup sessions)
 	mux.Handle("/admin", adminH)
 	mux.Handle("/admin/", adminH)
 	log.Printf("Copa server starting on http://0.0.0.0%s", addr)
@@ -147,9 +153,6 @@ func main() {
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
-
-	// SSE usa conexoes de longa duracao; nao limitar a escrita nessas rotas.
-	srv.WriteTimeout = 0
 
 	// Shutdown gracioso: Ctrl+C / fechar terminal -> drena conexoes, faz checkpoint do WAL
 	// e um backup final, evitando perda/corrupcao de dados.
@@ -165,7 +168,7 @@ func main() {
 
 	<-ctx.Done()
 	log.Print("encerrando...")
-	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
 		log.Printf("shutdown warning: %v", err)
@@ -199,8 +202,10 @@ func cleanOldBackups(dataDir string) {
 			backups = append(backups, filepath.Join(dataDir, e.Name()))
 		}
 	}
-	for len(backups) > 5 {
-		os.Remove(backups[0]) //nolint:errcheck
+	for len(backups) > config.MaxBackups {
+		if err := os.Remove(backups[0]); err != nil {
+			log.Printf("warning: failed to remove old backup %s: %v", backups[0], err)
+		}
 		backups = backups[1:]
 	}
 }
