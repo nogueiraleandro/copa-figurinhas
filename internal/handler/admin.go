@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1164,7 +1165,42 @@ func localIPv4s() []string {
 			}
 		}
 	}
-	return out
+	return rankLANIPs(out)
+}
+
+// rankLANIPs descarta endereços não-privados (IP público, link-local) — inúteis
+// numa LAN sem internet — e ordena os IPs de LAN colocando o endereço de cliente
+// real à frente dos adaptadores virtuais (VM/WSL costumam terminar em .1), para
+// que o operador imprima/escaneie o QR certo no evento. Confiabilidade > tudo.
+func rankLANIPs(ips []string) []string {
+	var lan []string
+	for _, s := range ips {
+		ip := net.ParseIP(s)
+		if ip == nil || !ip.IsPrivate() {
+			continue
+		}
+		lan = append(lan, s)
+	}
+	sort.SliceStable(lan, func(i, j int) bool {
+		return ipRank(lan[i]) < ipRank(lan[j])
+	})
+	return lan
+}
+
+// ipRank prioriza a faixa doméstica típica (192.168.*) e penaliza endereços
+// terminados em .1, que quase sempre são gateways ou adaptadores virtuais.
+func ipRank(s string) int {
+	base := 4
+	switch {
+	case strings.HasPrefix(s, "192.168."):
+		base = 0
+	case strings.HasPrefix(s, "10."):
+		base = 2
+	}
+	if strings.HasSuffix(s, ".1") {
+		base++
+	}
+	return base
 }
 
 func listenPort(listenAddr string) string {

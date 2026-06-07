@@ -595,3 +595,25 @@ func onePixelPNG() []byte {
 		0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 	}
 }
+
+// rankLANIPs deve descartar IP público/link-local e colocar o IP de cliente
+// real (192.168.0.109 no evento) à frente dos adaptadores virtuais (.1).
+func TestRankLANIPs(t *testing.T) {
+	in := []string{
+		"54.232.189.113", // público — deve ser descartado
+		"192.168.80.1",   // adaptador virtual (Hyper-V/VirtualBox)
+		"172.20.224.1",   // adaptador WSL
+		"192.168.0.109",  // IP real do notebook na LAN do evento
+		"169.254.10.5",   // link-local — deve ser descartado
+	}
+	got := rankLANIPs(in)
+	want := []string{"192.168.0.109", "192.168.80.1", "172.20.224.1"}
+	if len(got) != len(want) {
+		t.Fatalf("rankLANIPs(%v) = %v; queria %v", in, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rankLANIPs ordem errada: got %v, want %v", got, want)
+		}
+	}
+}
