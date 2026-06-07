@@ -57,13 +57,17 @@ copa.exe                  ← binário único, ~18 MB
 
 ### 3.1 IP fixo no notebook (recomendado)
 
-No roteador, reserve o IP `192.168.0.50` para o MAC address do notebook
+> ✅ **IP confirmado no local do evento:** `192.168.0.109` (rede atual do notebook).
+> Todas as URLs deste guia já usam esse IP. Se o roteador trocar o IP, atualize o
+> `base_url` no admin e regenere a QR Sheet.
+
+No roteador, reserve o IP `192.168.0.109` para o MAC address do notebook
 (geralmente chamado de "DHCP Reservation" ou "Static Lease" nas configurações).
 
 Alternativamente, configure IP estático no Windows:
 ```
 Painel de Controle → Rede → Adaptador Wi-Fi → Propriedades → IPv4
-  IP: 192.168.0.50
+  IP: 192.168.0.109
   Máscara: 255.255.255.0
   Gateway: 192.168.0.1
   DNS: 192.168.0.1
@@ -119,7 +123,7 @@ O servidor sobe na porta **8080** por padrão.
 Em **Admin → Config**, defina:
 
 ```
-http://192.168.0.50:8080
+http://192.168.0.109:8080
 ```
 
 (sem barra final, com o IP real do notebook na sua rede)
@@ -157,7 +161,7 @@ Carlos,Carlão,
 
 **Admin → QR Sheet** — exibe uma folha HTML com o QR de cada participante.
 - Use `Ctrl+P` → "Salvar como PDF" ou imprimir direto.
-- Cada QR leva para `http://192.168.0.50:8080/s/<token>`.
+- Cada QR leva para `http://192.168.0.109:8080/s/<token>`.
 - **Corte e cole o QR no verso da figurinha física.**
 
 ### 5.4 Travar o elenco (~30 min antes do apito)
@@ -224,7 +228,7 @@ Execute este roteiro **pelo menos 1 semana antes** (ou no dia anterior):
 - [ ] Tela de campeão aparece quando `kickoff_at` está no passado
 - [ ] Backup baixado via **Admin → Backup** é um arquivo SQLite válido
 - [ ] Export CSV contém os participantes e colunas esperadas
-- [ ] Celular consegue acessar `http://192.168.0.50:8080` pela rede local
+- [ ] Celular consegue acessar `http://192.168.0.109:8080` pela rede local
 - [ ] Múltiplos celulares simultâneos (peça 3-4 pessoas para scanear ao mesmo tempo)
 - [ ] Limpar o banco de teste: parar o servidor, deletar `data/copa.db`, reiniciar
 
@@ -235,7 +239,7 @@ Execute este roteiro **pelo menos 1 semana antes** (ou no dia anterior):
 ### Manhã / antes dos convidados chegarem
 
 - [ ] Ligar o notebook e conectar ao roteador dedicado
-- [ ] Verificar IP: `ipconfig` → confirmar `192.168.0.50`
+- [ ] Verificar IP: `ipconfig` → confirmar `192.168.0.109`
 - [ ] Iniciar `copa.exe` (via `iniciar.bat` ou terminal)
 - [ ] Login no admin: `http://localhost:8080/admin`
 - [ ] Conferir `base_url` no admin (⚠️ não alterar se já imprimiu QRs)
@@ -276,7 +280,7 @@ Execute este roteiro **pelo menos 1 semana antes** (ou no dia anterior):
 
 **"Não consigo escanear"**
 - Verificar se o celular está conectado à rede certa (Wi-Fi do evento).
-- Tentar abrir `http://192.168.0.50:8080` no navegador manualmente.
+- Tentar abrir `http://192.168.0.109:8080` no navegador manualmente.
 - Verificar se a câmera nativa do celular lê QR (ou usar Google Lens).
 
 **"Escaneei e não abriu"**
@@ -348,19 +352,19 @@ Se ficar parada por mais de 1 minuto:
 
 | URL | Descrição |
 |-----|-----------|
-| `http://192.168.0.50:8080/` | Página inicial (convidados) |
-| `http://192.168.0.50:8080/admin` | Login do admin |
-| `http://192.168.0.50:8080/admin/dashboard` | Dashboard com ranking e status |
-| `http://192.168.0.50:8080/admin/participants` | Gerenciar participantes |
-| `http://192.168.0.50:8080/admin/bulk` | Importar CSV + fotos |
-| `http://192.168.0.50:8080/admin/qrsheet` | Gerar folha de QR codes |
-| `http://192.168.0.50:8080/admin/settings` | Configurações (base_url, kickoff) |
-| `http://192.168.0.50:8080/admin/backup` | Baixar backup SQLite |
-| `http://192.168.0.50:8080/admin/export` | Exportar resultado CSV |
-| `http://192.168.0.50:8080/tv` | Telão (projetor) — ranking ao vivo |
-| `http://192.168.0.50:8080/album` | Álbum do convidado (depois de registrado) |
+| `http://192.168.0.109:8080/` | Página inicial (convidados) |
+| `http://192.168.0.109:8080/admin` | Login do admin |
+| `http://192.168.0.109:8080/admin/dashboard` | Dashboard com ranking e status |
+| `http://192.168.0.109:8080/admin/participants` | Gerenciar participantes |
+| `http://192.168.0.109:8080/admin/bulk` | Importar CSV + fotos |
+| `http://192.168.0.109:8080/admin/qrsheet` | Gerar folha de QR codes |
+| `http://192.168.0.109:8080/admin/settings` | Configurações (base_url, kickoff) |
+| `http://192.168.0.109:8080/admin/backup` | Baixar backup SQLite |
+| `http://192.168.0.109:8080/admin/export` | Exportar resultado CSV |
+| `http://192.168.0.109:8080/tv` | Telão (projetor) — ranking ao vivo |
+| `http://192.168.0.109:8080/album` | Álbum do convidado (depois de registrado) |
 
-> Substitua `192.168.0.50` pelo IP real do notebook na sua rede, se diferente.
+> IP confirmado no evento: `192.168.0.109`. Se o roteador trocar o IP, substitua aqui e no `base_url`.
 
 ---
 
