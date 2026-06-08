@@ -439,3 +439,93 @@ func TestRestoreFromOldBackupWithoutAIColumns(t *testing.T) {
 		t.Fatalf("campos novos deveriam ficar com defaults: %#v", set)
 	}
 }
+
+// ListActiveParticipants traz só os ativos, em ordem de id.
+func TestListActiveParticipants(t *testing.T) {
+	s := newTestStore(t)
+	a := mustParticipant(t, s, "Ativo A")
+	mustParticipant(t, s, "Ativo B")
+	inativo := mustParticipant(t, s, "Inativo")
+	if err := s.SetParticipantActive(inativo, false); err != nil {
+		t.Fatalf("desativar: %v", err)
+	}
+
+	active, err := s.ListActiveParticipants()
+	if err != nil {
+		t.Fatalf("list active: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("esperava 2 ativos, got %d", len(active))
+	}
+	if active[0].ID != a {
+		t.Fatalf("ordem por id esperada; primeiro deveria ser %d, got %d", a, active[0].ID)
+	}
+	for _, p := range active {
+		if !p.Active {
+			t.Fatalf("ListActiveParticipants nao deveria retornar inativo: %q", p.Name)
+		}
+	}
+}
+
+// UpdateParticipant persiste nome, campos extras e o flag active.
+func TestUpdateParticipant(t *testing.T) {
+	s := newTestStore(t)
+	id := mustParticipant(t, s, "Original")
+
+	p, err := s.GetParticipantByID(id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	p.Name = "Atualizado"
+	p.Team = "PALMEIRAS (BR)"
+	p.Phrase = "Vai Verdão"
+	p.Active = false
+	if err := s.UpdateParticipant(p); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, _ := s.GetParticipantByID(id)
+	if got.Name != "Atualizado" || got.Team != "PALMEIRAS (BR)" || got.Phrase != "Vai Verdão" {
+		t.Fatalf("campos nao persistiram: %#v", got)
+	}
+	if got.Active {
+		t.Fatalf("active=false deveria persistir")
+	}
+}
+
+// EnsureFinalSnapshot congela o ranking; ClearFinalSnapshot remove o congelado.
+func TestFinalSnapshotLifecycle(t *testing.T) {
+	s := newTestStore(t)
+	ana := mustParticipant(t, s, "Ana")
+	bruno := mustParticipant(t, s, "Bruno")
+	// Ana precisa de device reivindicado para entrar no ranking.
+	if _, err := s.CreateDevice(ana); err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	s.AddToCollection(ana, ana)   //nolint:errcheck
+	s.AddToCollection(ana, bruno) //nolint:errcheck
+
+	asOf := time.Now().Add(time.Hour)
+	ranking, err := s.EnsureFinalSnapshot(asOf)
+	if err != nil {
+		t.Fatalf("ensure snapshot: %v", err)
+	}
+	if len(ranking) == 0 {
+		t.Fatalf("snapshot deveria ter ao menos 1 entrada")
+	}
+
+	stored, frozenAt, err := s.GetStoredFinalRanking()
+	if err != nil {
+		t.Fatalf("get stored: %v", err)
+	}
+	if frozenAt == nil || len(stored) != len(ranking) {
+		t.Fatalf("ranking congelado divergente: stored=%d ranking=%d frozenAt=%v", len(stored), len(ranking), frozenAt)
+	}
+
+	if err := s.ClearFinalSnapshot(); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if _, _, err := s.GetStoredFinalRanking(); err != ErrNotFound {
+		t.Fatalf("apos clear deveria retornar ErrNotFound, got %v", err)
+	}
+}
