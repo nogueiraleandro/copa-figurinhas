@@ -350,21 +350,23 @@ func (h *AdminHandler) handlePreflight(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) handleParticipants(w http.ResponseWriter, r *http.Request) {
 	participants, _ := h.store.ListParticipants()
 	setting, _ := h.store.GetSetting()
+	aiWarnMsg := r.URL.Query().Get("aiwarn")
 	h.tmpl.Render(w, "admin_participants.html", map[string]interface{}{
 		"Participants": participants,
 		"BaseURL":      setting.BaseURL,
-		"AIWarn":       r.URL.Query().Get("aiwarn") == "1",
+		"AIWarn":       aiWarnMsg != "",
+		"AIWarnMsg":    aiWarnMsg,
 	})
 }
 
 func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "", false))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "", ""))
 		return
 	}
 
 	if setting, _ := h.store.GetSetting(); setting.RosterLocked {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Elenco travado — destrave nas configurações para adicionar participantes.", false))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Elenco travado — destrave nas configurações para adicionar participantes.", ""))
 		return
 	}
 
@@ -372,7 +374,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 	name := strings.TrimSpace(r.FormValue("name"))
 	nickname := strings.TrimSpace(r.FormValue("nickname"))
 	if name == "" {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Nome obrigatório", false))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Nome obrigatório", ""))
 		return
 	}
 
@@ -383,7 +385,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
 
 	photoPath := ""
-	aiWarn := false
+	aiWarnMsg := ""
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
 		defer file.Close()
 		if data, rerr := io.ReadAll(file); rerr == nil {
@@ -394,11 +396,11 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 					photoMime = http.DetectContentType(data)
 				}
 				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); ok {
+				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); reason == "" {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
-					aiWarn = true
+					aiWarnMsg = reason
 				}
 			}
 			photoPath = h.saveImage(data, filename)
@@ -407,7 +409,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 
 	created, err := h.store.CreateParticipant(p.Name, p.Nickname, photoPath)
 	if err != nil {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarn))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarnMsg))
 		return
 	}
 	created.Team, created.InfoDate, created.Height, created.Weight, created.Phrase = p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase
@@ -416,7 +418,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.broadcastRanking()
-	redirectWithAIWarn(w, r, "/admin/participants", aiWarn)
+	redirectWithAIWarn(w, r, "/admin/participants", aiWarnMsg)
 }
 
 func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Request) {
@@ -434,7 +436,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	}
 
 	if r.Method == http.MethodGet {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "", r.URL.Query().Get("aiwarn") == "1"))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "", r.URL.Query().Get("aiwarn")))
 		return
 	}
 
@@ -447,7 +449,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	genero := strings.TrimSpace(r.FormValue("genero"))
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
 
-	aiWarn := false
+	aiWarnMsg := ""
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
 		defer file.Close()
 		if data, rerr := io.ReadAll(file); rerr == nil {
@@ -458,11 +460,11 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 					photoMime = http.DetectContentType(data)
 				}
 				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, ok := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); ok {
+				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); reason == "" {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
-					aiWarn = true
+					aiWarnMsg = reason
 				}
 			}
 			if pp := h.saveImage(data, filename); pp != "" {
@@ -472,12 +474,12 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.store.UpdateParticipant(p); err != nil {
-		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "Erro ao atualizar: "+err.Error(), aiWarn))
+		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(false, p, "Erro ao atualizar: "+err.Error(), aiWarnMsg))
 		return
 	}
 
 	h.broadcastRanking()
-	redirectWithAIWarn(w, r, "/admin/participants", aiWarn)
+	redirectWithAIWarn(w, r, "/admin/participants", aiWarnMsg)
 }
 
 func (h *AdminHandler) handleDeleteParticipant(w http.ResponseWriter, r *http.Request) {
@@ -501,13 +503,14 @@ func (h *AdminHandler) handleDeleteParticipant(w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, "/admin/participants", http.StatusSeeOther)
 }
 
-func (h *AdminHandler) participantFormData(isNew bool, p *model.Participant, errorMsg string, aiWarn bool) map[string]interface{} {
+func (h *AdminHandler) participantFormData(isNew bool, p *model.Participant, errorMsg string, aiWarnMsg string) map[string]interface{} {
 	setting, _ := h.store.GetSetting()
 	return map[string]interface{}{
 		"IsNew":           isNew,
 		"Participant":     p,
 		"Error":           errorMsg,
-		"AIWarn":          aiWarn,
+		"AIWarn":          aiWarnMsg != "",
+		"AIWarnMsg":       aiWarnMsg,
 		"AIEnabled":       strings.TrimSpace(setting.GeminiAPIKey) != "",
 		"AIDefaultPrompt": defaultAIPrompt,
 	}
@@ -518,10 +521,13 @@ func (h *AdminHandler) aiConfigured() bool {
 	return err == nil && strings.TrimSpace(setting.GeminiAPIKey) != ""
 }
 
-func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte, photo2Mime string, p *model.Participant, faixa, genero, enquadramento string) ([]byte, string, bool) {
+// styleWithAI tenta estilizar a foto com a IA. Em caso de sucesso retorna a
+// imagem e o mime, e reason == "". Em caso de falha retorna reason com uma
+// mensagem curta e amigavel explicando o motivo (para mostrar ao operador).
+func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte, photo2Mime string, p *model.Participant, faixa, genero, enquadramento string) (out []byte, outMime string, reason string) {
 	setting, err := h.store.GetSetting()
 	if err != nil || strings.TrimSpace(setting.GeminiAPIKey) == "" {
-		return nil, "", false
+		return nil, "", "A IA nao esta configurada. A foto original foi salva."
 	}
 	model := strings.TrimSpace(setting.AIModel)
 	model = normalizeAIModel(model)
@@ -538,12 +544,29 @@ func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 190*time.Second)
 	defer cancel()
-	out, outMime, err := client.StyleImage(ctx, photo, photoMime, photo2, photo2Mime, ref, refMime, prompt)
+	out, outMime, err = client.StyleImage(ctx, photo, photoMime, photo2, photo2Mime, ref, refMime, prompt)
 	if err != nil {
 		log.Printf("gemini image generation failed: %v", err)
-		return nil, "", false
+		return nil, "", aiFailureReason(err)
 	}
-	return out, outMime, true
+	return out, outMime, ""
+}
+
+// aiFailureReason traduz o erro do cliente Gemini numa mensagem curta para o
+// operador. Os erros do cliente carregam o status HTTP ("gemini status %d: ..."),
+// entao o casamento por substring e confiavel.
+func aiFailureReason(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "status 401"), strings.Contains(msg, "status 403"):
+		return "Chave da IA invalida ou sem permissao. A foto original foi salva."
+	case strings.Contains(msg, "status 429"):
+		return "Cota da IA esgotada — tente mais tarde. A foto original foi salva."
+	case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"), strings.Contains(msg, "Timeout"):
+		return "A IA demorou demais (timeout). A foto original foi salva."
+	default:
+		return "A IA nao conseguiu gerar a figurinha. A foto original foi salva."
+	}
 }
 
 // buildStickerTextPrompt monta o trecho que instrui o Gemini a escrever, com
@@ -670,9 +693,9 @@ func normalizeAIModel(model string) string {
 	return model
 }
 
-func redirectWithAIWarn(w http.ResponseWriter, r *http.Request, target string, aiWarn bool) {
-	if aiWarn {
-		target += "?aiwarn=1"
+func redirectWithAIWarn(w http.ResponseWriter, r *http.Request, target string, aiWarnMsg string) {
+	if aiWarnMsg != "" {
+		target += "?aiwarn=" + url.QueryEscape(aiWarnMsg)
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

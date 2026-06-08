@@ -29,7 +29,7 @@
   </div>
 
   {{if .AIWarn}}
-  <div class="alert alert-warning">A IA nao conseguiu gerar a figurinha. A foto original foi salva.</div>
+  <div class="alert alert-warning">{{if .AIWarnMsg}}{{.AIWarnMsg}}{{else}}A IA nao conseguiu gerar a figurinha. A foto original foi salva.{{end}}</div>
   {{end}}
 
   <table class="admin-table">
