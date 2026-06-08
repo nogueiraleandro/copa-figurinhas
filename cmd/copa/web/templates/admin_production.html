@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Produção - Admin Copa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+<nav class="admin-nav">
+  <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
+  <div class="nav-links">
+    <a href="/admin/preflight">Pre-voo</a>
+    <a href="/admin/participants">Participantes</a>
+    <a href="/admin/production" class="active">Produção</a>
+    <a href="/admin/bulk">Importar</a>
+    <a href="/admin/qrsheet">QR verso</a>
+    <a href="/admin/cards">Figurinhas</a>
+    <a href="/admin/settings">Config</a>
+    <a href="/admin/transfer">Transferir</a>
+    <a href="/admin/sistema">Sistema</a>
+    <a href="/admin/logout" class="nav-logout">Sair</a>
+  </div>
+</nav>
+
+<div class="admin-content">
+  <div class="section-header">
+    <h1>Produção das Figurinhas</h1>
+    <div class="form-actions" style="margin-top:0">
+      <form method="POST" action="/admin/production/import-initial" onsubmit="return confirm('Importar a lista inicial sem duplicar nomes existentes?')">
+        <button type="submit" class="btn btn-outline">Importar lista inicial</button>
+      </form>
+      <a href="/admin/participants/new" class="btn btn-primary">+ Adicionar</a>
+    </div>
+  </div>
+
+  {{if .Imported}}
+  <div class="alert alert-success">Importação concluída: {{.Created}} criados, {{.Skipped}} ignorados.</div>
+  {{end}}
+
+  <div class="dashboard-cards">
+    <a class="dash-card status-card" href="/admin/production?status=pending_photo">
+      <div class="dash-card-value">{{.Stats.PendingPhoto}}</div>
+      <div class="dash-card-label">Pendente foto</div>
+    </a>
+    <a class="dash-card status-card" href="/admin/production?status=photo_received">
+      <div class="dash-card-value">{{.Stats.PhotoReceived}}</div>
+      <div class="dash-card-label">Foto recebida</div>
+    </a>
+    <a class="dash-card status-card" href="/admin/production?status=sticker_done">
+      <div class="dash-card-value">{{.Stats.StickerDone}}</div>
+      <div class="dash-card-label">Figurinha feita</div>
+    </a>
+    <a class="dash-card status-card" href="/admin/production?show_inactive=1">
+      <div class="dash-card-value">{{.Stats.Inactive}}</div>
+      <div class="dash-card-label">Desativados</div>
+    </a>
+  </div>
+
+  <div class="section">
+    <form method="GET" class="production-filters">
+      <select name="status" class="form-input">
+        <option value="">Todos os status</option>
+        <option value="pending_photo" {{if eq .Filters.Status "pending_photo"}}selected{{end}}>Pendente foto</option>
+        <option value="photo_received" {{if eq .Filters.Status "photo_received"}}selected{{end}}>Foto recebida</option>
+        <option value="sticker_done" {{if eq .Filters.Status "sticker_done"}}selected{{end}}>Figurinha feita</option>
+      </select>
+      <select name="category" class="form-input">
+        <option value="">Todas as categorias</option>
+        <option value="album" {{if eq .Filters.Category "album"}}selected{{end}}>Álbum</option>
+        <option value="special" {{if eq .Filters.Category "special"}}selected{{end}}>Especial</option>
+      </select>
+      <select name="owner" class="form-input">
+        <option value="">Todos responsáveis</option>
+        {{range .Owners}}<option value="{{.}}" {{if eq $.Filters.PhotoOwner .}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <select name="group" class="form-input">
+        <option value="">Todos grupos</option>
+        {{range .Groups}}<option value="{{.}}" {{if eq $.Filters.GroupName .}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <label class="check-inline"><input type="checkbox" name="show_inactive" value="1" {{if .Filters.ShowInactive}}checked{{end}}> Mostrar desativados</label>
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+      <a href="/admin/production" class="btn btn-outline">Limpar</a>
+    </form>
+  </div>
+
+  <div class="production-board">
+    <div class="production-column">
+      <h2>Pendente foto</h2>
+      {{range .Participants}}{{if eq .ProductionStatus "pending_photo"}}
+      <div class="production-item {{if not .Active}}row-inactive{{end}}">
+        <strong>{{if .StickerNumber}}{{.StickerNumber}} - {{end}}{{.Name}}</strong>
+        <span>{{.GroupName}} · resp. {{.PhotoOwner}}</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+    <div class="production-column">
+      <h2>Foto recebida</h2>
+      {{range .Participants}}{{if eq .ProductionStatus "photo_received"}}
+      <div class="production-item {{if not .Active}}row-inactive{{end}}">
+        <strong>{{if .StickerNumber}}{{.StickerNumber}} - {{end}}{{.Name}}</strong>
+        <span>{{.GroupName}} · resp. {{.PhotoOwner}}</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+    <div class="production-column">
+      <h2>Figurinha feita</h2>
+      {{range .Participants}}{{if eq .ProductionStatus "sticker_done"}}
+      <div class="production-item {{if not .Active}}row-inactive{{end}}">
+        <strong>{{if .StickerNumber}}{{.StickerNumber}} - {{end}}{{.Name}}</strong>
+        <span>{{.GroupName}} · resp. {{.PhotoOwner}}</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Tabela de produção</h2>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Nº</th>
+          <th>Imagem</th>
+          <th>Nome</th>
+          <th>Grupo</th>
+          <th>Responsável</th>
+          <th>Categoria</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Participants}}
+        <tr class="{{if not .Active}}row-inactive{{end}}">
+          <td>{{if .StickerNumber}}{{.StickerNumber}}{{end}}</td>
+          <td>
+            {{if .StickerPath}}<img src="{{.StickerPath}}" alt="{{.Name}}" class="table-avatar">
+            {{else if .PhotoPath}}<img src="{{.PhotoPath}}" alt="{{.Name}}" class="table-avatar">
+            {{else}}<div class="table-avatar-placeholder">{{initial .Name}}</div>{{end}}
+          </td>
+          <td>{{.Name}}{{if .Notes}}<div class="hint">{{.Notes}}</div>{{end}}</td>
+          <td>{{.GroupName}}</td>
+          <td>{{.PhotoOwner}}</td>
+          <td>{{if eq .Category "special"}}Especial{{else}}Álbum{{end}}</td>
+          <td>
+            {{if eq .ProductionStatus "sticker_done"}}<span class="badge badge-green">Figurinha feita</span>{{else if eq .ProductionStatus "photo_received"}}<span class="badge badge-blue">Foto recebida</span>{{else}}<span class="badge badge-gray">Pendente foto</span>{{end}}
+          </td>
+          <td>
+            <form method="POST" action="/admin/production/{{.ID}}/status" class="inline-form">
+              <select name="production_status" class="form-input form-input-sm">
+                <option value="pending_photo" {{if eq .ProductionStatus "pending_photo"}}selected{{end}}>Pendente</option>
+                <option value="photo_received" {{if eq .ProductionStatus "photo_received"}}selected{{end}}>Recebida</option>
+                <option value="sticker_done" {{if eq .ProductionStatus "sticker_done"}}selected{{end}}>Feita</option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline">Salvar</button>
+            </form>
+            <a href="/admin/participants/{{.ID}}/edit" class="btn btn-sm btn-outline">Editar</a>
+            {{if .Active}}
+            <form method="POST" action="/admin/participants/{{.ID}}/delete" style="display:inline" onsubmit="return confirm('Desativar {{.Name}}?')">
+              <button type="submit" class="btn btn-sm btn-danger">Desativar</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="8">Nenhum participante encontrado.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>

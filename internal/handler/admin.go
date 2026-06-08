@@ -105,6 +105,12 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handlePreflight(w, r)
 	case path == "/admin/participants":
 		h.handleParticipants(w, r)
+	case path == "/admin/production":
+		h.handleProduction(w, r)
+	case strings.HasPrefix(path, "/admin/production/") && strings.HasSuffix(path, "/status"):
+		h.handleProductionStatus(w, r)
+	case path == "/admin/production/import-initial":
+		h.handleInitialRosterImport(w, r)
 	case path == "/admin/participants/new":
 		h.handleNewParticipant(w, r)
 	case strings.HasPrefix(path, "/admin/participants/") && strings.HasSuffix(path, "/edit"):
@@ -351,12 +357,149 @@ func (h *AdminHandler) handleParticipants(w http.ResponseWriter, r *http.Request
 	participants, _ := h.store.ListParticipants()
 	setting, _ := h.store.GetSetting()
 	aiWarnMsg := r.URL.Query().Get("aiwarn")
+	showInactive := r.URL.Query().Get("show_inactive") == "1"
+	if !showInactive {
+		participants = filterParticipants(participants, func(p *model.Participant) bool { return p.Active })
+	}
 	h.tmpl.Render(w, "admin_participants.html", map[string]interface{}{
 		"Participants": participants,
 		"BaseURL":      setting.BaseURL,
 		"AIWarn":       aiWarnMsg != "",
 		"AIWarnMsg":    aiWarnMsg,
+		"ShowInactive": showInactive,
+		"TotalVisible": len(participants),
 	})
+}
+
+func (h *AdminHandler) handleProduction(w http.ResponseWriter, r *http.Request) {
+	participants, _ := h.store.ListParticipants()
+	filters := productionFilters{
+		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
+		Category:     strings.TrimSpace(r.URL.Query().Get("category")),
+		GroupName:    strings.TrimSpace(r.URL.Query().Get("group")),
+		PhotoOwner:   strings.TrimSpace(r.URL.Query().Get("owner")),
+		ShowInactive: r.URL.Query().Get("show_inactive") == "1",
+	}
+	var visible []*model.Participant
+	for _, p := range participants {
+		if !filters.ShowInactive && !p.Active {
+			continue
+		}
+		if filters.Status != "" && p.ProductionStatus != filters.Status {
+			continue
+		}
+		if filters.Category != "" && p.Category != filters.Category {
+			continue
+		}
+		if filters.GroupName != "" && p.GroupName != filters.GroupName {
+			continue
+		}
+		if filters.PhotoOwner != "" && p.PhotoOwner != filters.PhotoOwner {
+			continue
+		}
+		visible = append(visible, p)
+	}
+	sort.SliceStable(visible, func(i, j int) bool {
+		if visible[i].ProductionStatus != visible[j].ProductionStatus {
+			return statusRank(visible[i].ProductionStatus) < statusRank(visible[j].ProductionStatus)
+		}
+		if visible[i].StickerNumber != visible[j].StickerNumber {
+			return visible[i].StickerNumber < visible[j].StickerNumber
+		}
+		return visible[i].ID < visible[j].ID
+	})
+
+	stats := productionStats(participants)
+	h.tmpl.Render(w, "admin_production.html", map[string]interface{}{
+		"Participants": visible,
+		"Stats":        stats,
+		"Filters":      filters,
+		"Owners":       uniqueParticipantField(participants, func(p *model.Participant) string { return p.PhotoOwner }),
+		"Groups":       uniqueParticipantField(participants, func(p *model.Participant) string { return p.GroupName }),
+		"Imported":     r.URL.Query().Get("imported") == "1",
+		"Created":      r.URL.Query().Get("created"),
+		"Skipped":      r.URL.Query().Get("skipped"),
+	})
+}
+
+func (h *AdminHandler) handleProductionStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := extractID(r.URL.Path, "/admin/production/", "/status")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	p, err := h.store.GetParticipantByID(id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	r.ParseForm()
+	status := strings.TrimSpace(r.FormValue("production_status"))
+	if !validProductionStatus(status) {
+		http.Error(w, "status invalido", http.StatusBadRequest)
+		return
+	}
+	p.ProductionStatus = status
+	if err := h.store.UpdateParticipant(p); err != nil {
+		http.Error(w, "Erro ao atualizar: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin/production", http.StatusSeeOther)
+}
+
+func (h *AdminHandler) handleInitialRosterImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if setting, _ := h.store.GetSetting(); setting.RosterLocked {
+		http.Redirect(w, r, "/admin/production?imported=1&created=0&skipped=elenco-travado", http.StatusSeeOther)
+		return
+	}
+	existing, _ := h.store.ListParticipants()
+	seen := map[string]bool{}
+	nextNumber := 1
+	for _, p := range existing {
+		seen[participantSeedKey(p.Name, p.Category, p.GroupName)] = true
+		if p.StickerNumber >= nextNumber {
+			nextNumber = p.StickerNumber + 1
+		}
+	}
+	var created, skipped int
+	for _, seed := range initialRosterSeeds() {
+		key := participantSeedKey(seed.Name, seed.Category, seed.GroupName)
+		if seen[key] {
+			skipped++
+			continue
+		}
+		owner := seed.PhotoOwner
+		if owner == "" {
+			owner = seed.Name
+		}
+		p := &model.Participant{
+			StickerNumber:    nextNumber,
+			Name:             seed.Name,
+			Nickname:         seed.Name,
+			GroupName:        seed.GroupName,
+			PhotoOwner:       owner,
+			Category:         seed.Category,
+			ProductionStatus: model.ProductionPendingPhoto,
+		}
+		if _, err := h.store.CreateParticipantWithDetails(p); err != nil {
+			skipped++
+			continue
+		}
+		seen[key] = true
+		nextNumber++
+		created++
+	}
+	h.broadcastRanking()
+	http.Redirect(w, r, fmt.Sprintf("/admin/production?imported=1&created=%d&skipped=%d", created, skipped), http.StatusSeeOther)
 }
 
 func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Request) {
@@ -370,7 +513,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	r.ParseMultipartForm(10 << 20)
+	r.ParseMultipartForm(50 << 20)
 	name := strings.TrimSpace(r.FormValue("name"))
 	nickname := strings.TrimSpace(r.FormValue("nickname"))
 	if name == "" {
@@ -380,35 +523,42 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 
 	p := &model.Participant{Name: name, Nickname: nickname}
 	applyParticipantTextFields(p, r)
+	applyParticipantControlFields(p, r)
 	faixa := strings.TrimSpace(r.FormValue("faixa"))
 	genero := strings.TrimSpace(r.FormValue("genero"))
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
 	aiModel := strings.TrimSpace(r.FormValue("ai_model"))
 
-	photoPath := ""
 	aiWarnMsg := ""
-	if file, header, ferr := r.FormFile("photo"); ferr == nil {
-		defer file.Close()
-		if data, rerr := io.ReadAll(file); rerr == nil {
-			filename := header.Filename
-			if r.FormValue("use_ai") == "on" && h.aiConfigured() {
-				photoMime := header.Header.Get("Content-Type")
-				if !strings.HasPrefix(photoMime, "image/") {
-					photoMime = http.DetectContentType(data)
-				}
-				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
-					data = styled
-					filename = "gemini" + extForMime(styledMime)
-				} else {
-					aiWarnMsg = reason
-				}
+	originalData, originalName, originalMime := readUploadedImage(r, "original_photo")
+	if originalData == nil {
+		originalData, originalName, originalMime = readUploadedImage(r, "photo")
+	}
+	if originalData != nil {
+		p.PhotoPath = h.saveImage(originalData, originalName)
+		if p.ProductionStatus == model.ProductionPendingPhoto {
+			p.ProductionStatus = model.ProductionPhotoReceived
+		}
+	}
+	if r.FormValue("use_ai") == "on" && originalData != nil && h.aiConfigured() {
+		photo2, photo2Mime := readFormImage(r, "photo2")
+		if styled, styledMime, reason := h.styleWithAI(originalData, originalMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
+			p.StickerPath = h.saveImage(styled, "gemini"+extForMime(styledMime))
+			if p.StickerPath != "" {
+				p.ProductionStatus = model.ProductionStickerDone
 			}
-			photoPath = h.saveImage(data, filename)
+		} else {
+			aiWarnMsg = reason
+		}
+	}
+	if stickerData, stickerName, _ := readUploadedImage(r, "sticker"); stickerData != nil {
+		if pp := h.saveImage(stickerData, stickerName); pp != "" {
+			p.StickerPath = pp
+			p.ProductionStatus = model.ProductionStickerDone
 		}
 	}
 
-	created, err := h.store.CreateParticipant(p.Name, p.Nickname, photoPath)
+	created, err := h.store.CreateParticipantWithDetails(p)
 	if err != nil {
 		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarnMsg))
 		return
@@ -441,37 +591,49 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	r.ParseMultipartForm(10 << 20)
+	r.ParseMultipartForm(50 << 20)
 	p.Name = strings.TrimSpace(r.FormValue("name"))
 	p.Nickname = strings.TrimSpace(r.FormValue("nickname"))
 	p.Active = r.FormValue("active") == "on"
 	applyParticipantTextFields(p, r)
+	applyParticipantControlFields(p, r)
 	faixa := strings.TrimSpace(r.FormValue("faixa"))
 	genero := strings.TrimSpace(r.FormValue("genero"))
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
 	aiModel := strings.TrimSpace(r.FormValue("ai_model"))
 
 	aiWarnMsg := ""
-	if file, header, ferr := r.FormFile("photo"); ferr == nil {
-		defer file.Close()
-		if data, rerr := io.ReadAll(file); rerr == nil {
-			filename := header.Filename
-			if r.FormValue("use_ai") == "on" && h.aiConfigured() {
-				photoMime := header.Header.Get("Content-Type")
-				if !strings.HasPrefix(photoMime, "image/") {
-					photoMime = http.DetectContentType(data)
-				}
-				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
-					data = styled
-					filename = "gemini" + extForMime(styledMime)
-				} else {
-					aiWarnMsg = reason
-				}
+	originalData, originalName, originalMime := readUploadedImage(r, "original_photo")
+	if originalData == nil {
+		originalData, originalName, originalMime = readUploadedImage(r, "photo")
+	}
+	if originalData != nil {
+		if pp := h.saveImage(originalData, originalName); pp != "" {
+			p.PhotoPath = pp
+			if p.ProductionStatus == model.ProductionPendingPhoto {
+				p.ProductionStatus = model.ProductionPhotoReceived
 			}
-			if pp := h.saveImage(data, filename); pp != "" {
-				p.PhotoPath = pp
+		}
+	}
+	if originalData == nil && r.FormValue("use_ai") == "on" && p.PhotoPath != "" {
+		originalData, originalMime = h.loadStoredImage(p.PhotoPath)
+		originalName = "original" + extForMime(originalMime)
+	}
+	if r.FormValue("use_ai") == "on" && originalData != nil && h.aiConfigured() {
+		photo2, photo2Mime := readFormImage(r, "photo2")
+		if styled, styledMime, reason := h.styleWithAI(originalData, originalMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
+			if pp := h.saveImage(styled, "gemini"+extForMime(styledMime)); pp != "" {
+				p.StickerPath = pp
+				p.ProductionStatus = model.ProductionStickerDone
 			}
+		} else {
+			aiWarnMsg = reason
+		}
+	}
+	if stickerData, stickerName, _ := readUploadedImage(r, "sticker"); stickerData != nil {
+		if pp := h.saveImage(stickerData, stickerName); pp != "" {
+			p.StickerPath = pp
+			p.ProductionStatus = model.ProductionStickerDone
 		}
 	}
 
@@ -502,6 +664,10 @@ func (h *AdminHandler) handleDeleteParticipant(w http.ResponseWriter, r *http.Re
 	}
 
 	h.broadcastRanking()
+	if strings.Contains(r.Referer(), "/admin/production") {
+		http.Redirect(w, r, "/admin/production", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/admin/participants", http.StatusSeeOther)
 }
 
@@ -652,6 +818,54 @@ func applyParticipantTextFields(p *model.Participant, r *http.Request) {
 	p.Phrase = strings.TrimSpace(r.FormValue("phrase"))
 }
 
+func applyParticipantControlFields(p *model.Participant, r *http.Request) {
+	if _, ok := r.Form["sticker_number"]; ok {
+		n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("sticker_number")))
+		if err != nil {
+			n = 0
+		}
+		p.StickerNumber = n
+	}
+	if _, ok := r.Form["group_name"]; ok {
+		p.GroupName = strings.TrimSpace(r.FormValue("group_name"))
+	}
+	if _, ok := r.Form["photo_owner"]; ok {
+		p.PhotoOwner = strings.TrimSpace(r.FormValue("photo_owner"))
+	}
+	if _, ok := r.Form["category"]; ok {
+		p.Category = strings.TrimSpace(r.FormValue("category"))
+	}
+	if p.Category == "" {
+		p.Category = model.ParticipantCategoryAlbum
+	}
+	if _, ok := r.Form["production_status"]; ok {
+		p.ProductionStatus = strings.TrimSpace(r.FormValue("production_status"))
+	}
+	if p.ProductionStatus == "" {
+		p.ProductionStatus = model.ProductionPendingPhoto
+	}
+	if _, ok := r.Form["notes"]; ok {
+		p.Notes = strings.TrimSpace(r.FormValue("notes"))
+	}
+}
+
+func readUploadedImage(r *http.Request, field string) ([]byte, string, string) {
+	file, header, err := r.FormFile(field)
+	if err != nil {
+		return nil, "", ""
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		return nil, "", ""
+	}
+	mime := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		mime = http.DetectContentType(data)
+	}
+	return data, header.Filename, mime
+}
+
 // readFormImage le um arquivo de imagem opcional do formulario. Retorna nil se ausente.
 func readFormImage(r *http.Request, field string) ([]byte, string) {
 	file, header, err := r.FormFile(field)
@@ -683,6 +897,23 @@ func (h *AdminHandler) loadAIReference(webPath string) ([]byte, string) {
 	data, err := os.ReadFile(filepath.Join(h.uploadsDir, clean))
 	if err != nil {
 		log.Printf("ai reference not readable: %v", err)
+		return nil, ""
+	}
+	return data, http.DetectContentType(data)
+}
+
+func (h *AdminHandler) loadStoredImage(webPath string) ([]byte, string) {
+	webPath = strings.TrimSpace(webPath)
+	if webPath == "" || !strings.HasPrefix(webPath, "/uploads/") {
+		return nil, ""
+	}
+	rel := strings.TrimPrefix(webPath, "/uploads/")
+	clean := filepath.Clean(rel)
+	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return nil, ""
+	}
+	data, err := os.ReadFile(filepath.Join(h.uploadsDir, clean))
+	if err != nil {
 		return nil, ""
 	}
 	return data, http.DetectContentType(data)
@@ -1152,7 +1383,7 @@ func (h *AdminHandler) handleTransfer(w http.ResponseWriter, r *http.Request) {
 // duas figurinhas retrato lado a lado por folha. O verso (QR) é impresso à parte
 // em A4 via /admin/qrsheet.
 func (h *AdminHandler) handleCards(w http.ResponseWriter, r *http.Request) {
-	participants, _ := h.store.ListActiveParticipants()
+	participants, _ := h.store.ListPrintableParticipants()
 
 	// Agrupa em pares: cada par cai numa folha 10x15 (duas figurinhas lado a lado).
 	var sheets [][]*model.Participant
@@ -1405,6 +1636,133 @@ func (h *AdminHandler) handleSystemWithError(w http.ResponseWriter, r *http.Requ
 }
 
 // hostOf extrai o host de uma URL (sem esquema/porta), ou "" se inválida.
+type productionFilters struct {
+	Status       string
+	Category     string
+	GroupName    string
+	PhotoOwner   string
+	ShowInactive bool
+}
+
+type productionSummary struct {
+	PendingPhoto  int
+	PhotoReceived int
+	StickerDone   int
+	Inactive      int
+}
+
+type rosterSeed struct {
+	Name       string
+	GroupName  string
+	PhotoOwner string
+	Category   string
+}
+
+func productionStats(participants []*model.Participant) productionSummary {
+	var s productionSummary
+	for _, p := range participants {
+		if !p.Active {
+			s.Inactive++
+			continue
+		}
+		switch p.ProductionStatus {
+		case model.ProductionStickerDone:
+			s.StickerDone++
+		case model.ProductionPhotoReceived:
+			s.PhotoReceived++
+		default:
+			s.PendingPhoto++
+		}
+	}
+	return s
+}
+
+func statusRank(status string) int {
+	switch status {
+	case model.ProductionPendingPhoto:
+		return 0
+	case model.ProductionPhotoReceived:
+		return 1
+	case model.ProductionStickerDone:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func validProductionStatus(status string) bool {
+	return status == model.ProductionPendingPhoto ||
+		status == model.ProductionPhotoReceived ||
+		status == model.ProductionStickerDone
+}
+
+func uniqueParticipantField(participants []*model.Participant, value func(*model.Participant) string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range participants {
+		v := strings.TrimSpace(value(p))
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func filterParticipants(participants []*model.Participant, keep func(*model.Participant) bool) []*model.Participant {
+	var out []*model.Participant
+	for _, p := range participants {
+		if keep(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func participantSeedKey(name, category, group string) string {
+	return strings.ToLower(strings.TrimSpace(category) + "|" + strings.TrimSpace(group) + "|" + strings.TrimSpace(name))
+}
+
+func initialRosterSeeds() []rosterSeed {
+	album := model.ParticipantCategoryAlbum
+	special := model.ParticipantCategorySpecial
+	var out []rosterSeed
+	add := func(category string, names []string, group, owner string) {
+		for _, name := range names {
+			out = append(out, rosterSeed{Name: name, GroupName: group, PhotoOwner: owner, Category: category})
+		}
+	}
+	add(album, []string{"Gama", "Dani", "Paulinho", "Debora", "Estela", "Dalton"}, "Itau", "")
+	add(album, []string{"Marcus Cruz"}, "Familia Cruz", "Marcus")
+	add(album, []string{"Bia", "Vinicius"}, "Familia Cruz", "Bia")
+	add(album, []string{"Emil", "Famil"}, "Itau", "")
+	add(album, []string{"Matheus"}, "Cunhado Ale", "Ale")
+	add(album, []string{"Juliana", "Henrico"}, "Irma Ale", "Ale")
+	add(album, []string{"Pai", "Mae"}, "Familia Nogueira", "Leandro")
+	add(album, []string{"Ester", "Toto", "Nete", "Ronaldo", "Dona Nega"}, "Familia", "")
+	add(album, []string{"Orlando Cruz", "A definir 1", "A definir 2"}, "Familia Cruz", "Orlando")
+	add(album, []string{"Aelson", "Joana"}, "Familia", "")
+	add(album, []string{"Simone", "A definir 3", "A definir 4", "A definir 5"}, "Itau", "Simone")
+	add(album, []string{"Marcio"}, "Futebol", "Marcio")
+	add(album, []string{"Debora", "Miguel"}, "Futebol", "Debora")
+	add(album, []string{"Carlos", "A definir 6", "A definir 7", "A definir 8", "A definir 9"}, "Futebol", "Carlos")
+	add(album, []string{"Paulinha", "Vini"}, "Itau", "")
+	add(album, []string{"Darcy", "Antonio", "Rodrigo"}, "Familia", "")
+	add(album, []string{"Angelo", "Anadir"}, "Amigo do Pai", "Pai")
+	add(album, []string{"Victor Quezada", "Emily", "Bebe"}, "Ester/Toto", "Ester")
+	add(album, []string{"Thais", "Edmar", "Magali"}, "Escola Fernanda", "Fernanda")
+	add(album, []string{"Renan", "Jade", "Diogo"}, "Familia", "")
+	add(album, []string{"Sabrina", "Diego"}, "Darcy", "Darcy")
+	add(album, []string{"Jailton", "Edna", "Celio", "Jacy"}, "Familia", "")
+	add(album, []string{"Renata"}, "Tia Caio", "Caio")
+	add(album, []string{"Pedro", "Suelen"}, "Nete", "Nete")
+	add(album, []string{"Alexandre", "Mayara", "Arthur", "Luiz", "Luiza", "Joaquim"}, "Familia", "")
+	add(special, []string{"Leandro", "Fernanda", "Renata", "Victor", "Malu", "Sofia", "Ravi", "Dener", "Fernando", "Cibele", "Marly", "Meire", "Guaxini"}, "Equipe Organizadora", "Leandro")
+	return out
+}
+
 func hostOf(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {

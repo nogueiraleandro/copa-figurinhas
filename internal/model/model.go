@@ -2,21 +2,37 @@ package model
 
 import "time"
 
+const (
+	ParticipantCategoryAlbum   = "album"
+	ParticipantCategorySpecial = "special"
+
+	ProductionPendingPhoto  = "pending_photo"
+	ProductionPhotoReceived = "photo_received"
+	ProductionStickerDone   = "sticker_done"
+)
+
 // Participant is a guest / sticker in the album.
 type Participant struct {
-	ID              int64
-	Token           string // random hex, used in QR URLs
-	Name            string
-	Nickname        string
-	PhotoPath       string
-	Team            string // ex: "PALMEIRAS (BR)" — escrito na figurinha
-	InfoDate        string // DATA da linha de dados
-	Height          string // ALTURA da linha de dados
-	Weight          string // Kg da linha de dados
-	Phrase          string // frase alternativa à linha de dados (<=25 chars)
-	Active          bool
-	ClaimedDeviceID *int64
-	CreatedAt       time.Time
+	ID               int64
+	Token            string // random hex, used in QR URLs
+	StickerNumber    int
+	Name             string
+	Nickname         string
+	PhotoPath        string
+	StickerPath      string
+	GroupName        string
+	PhotoOwner       string
+	Category         string
+	ProductionStatus string
+	Notes            string
+	Team             string // ex: "PALMEIRAS (BR)" — escrito na figurinha
+	InfoDate         string // DATA da linha de dados
+	Height           string // ALTURA da linha de dados
+	Weight           string // Kg da linha de dados
+	Phrase           string // frase alternativa à linha de dados (<=25 chars)
+	Active           bool
+	ClaimedDeviceID  *int64
+	CreatedAt        time.Time
 }
 
 // Device represents a phone (browser session).

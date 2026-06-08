@@ -37,7 +37,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 			t.Fatalf("coluna %q deveria existir: %v", col, err)
 		}
 	}
-	for _, col := range []string{"team", "info_date", "height", "weight", "phrase"} {
+	for _, col := range []string{"team", "info_date", "height", "weight", "phrase", "sticker_number", "sticker_path", "group_name", "photo_owner", "category", "production_status", "notes"} {
 		var n int
 		if err := database.QueryRow(`SELECT COUNT(` + col + `) FROM participant`).Scan(&n); err != nil {
 			t.Fatalf("coluna participant.%q deveria existir: %v", col, err)

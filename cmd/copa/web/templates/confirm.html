@@ -15,8 +15,8 @@
   <div class="confirm-hero">
     <div class="fig-sticker">
       <div class="fig-sticker-shine"></div>
-      {{if .Sticker.PhotoPath}}
-      <img src="{{.Sticker.PhotoPath}}" alt="{{.Sticker.Name}}" class="fig-sticker-photo">
+      {{if .Sticker.StickerPath}}
+      <img src="{{.Sticker.StickerPath}}" alt="{{.Sticker.Name}}" class="fig-sticker-photo">
       {{else}}
       <div class="fig-sticker-placeholder">{{slice .Sticker.Name 0 1}}</div>
       {{end}}

@@ -47,6 +47,7 @@
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
     <a href="/admin/participants">Participantes</a>
+    <a href="/admin/production">Produção</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR verso</a>
     <a href="/admin/cards" class="active">Figurinhas</a>
@@ -71,8 +72,8 @@
   <div class="sheet">
     {{range .}}
     <div class="fig">
-      {{if .PhotoPath}}
-      <img src="{{.PhotoPath}}" alt="{{.Name}}" class="fig-img">
+      {{if .StickerPath}}
+      <img src="{{.StickerPath}}" alt="{{.Name}}" class="fig-img">
       {{else}}
       <div class="fig-placeholder">{{slice .Name 0 1}}</div>
       {{end}}

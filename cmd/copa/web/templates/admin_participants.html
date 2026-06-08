@@ -12,6 +12,7 @@
   <div class="nav-links">
     <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants" class="active">Participantes</a>
+    <a href="/admin/production">Produção</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR verso</a>
     <a href="/admin/cards">Figurinhas</a>
@@ -27,6 +28,14 @@
     <h1>Participantes</h1>
     <a href="/admin/participants/new" class="btn btn-primary">+ Adicionar</a>
   </div>
+  <div class="section" style="margin-top:0">
+    <form method="GET" class="filter-bar">
+      <label><input type="checkbox" name="show_inactive" value="1" {{if .ShowInactive}}checked{{end}}> Mostrar desativados</label>
+      <button type="submit" class="btn btn-sm btn-outline">Filtrar</button>
+      {{if .ShowInactive}}<a href="/admin/participants" class="btn btn-sm btn-outline">Ocultar desativados</a>{{end}}
+      <span class="hint">{{.TotalVisible}} participantes na lista</span>
+    </form>
+  </div>
 
   {{if .AIWarn}}
   <div class="alert alert-warning">{{if .AIWarnMsg}}{{.AIWarnMsg}}{{else}}A IA nao conseguiu gerar a figurinha. A foto original foi salva.{{end}}</div>
@@ -37,7 +46,11 @@
       <tr>
         <th>Foto</th>
         <th>Nome</th>
-        <th>Apelido</th>
+        <th>Nº</th>
+        <th>Grupo</th>
+        <th>Resp. Foto</th>
+        <th>Categoria</th>
+        <th>Produção</th>
         <th>Token</th>
         <th>Status</th>
         <th>QR</th>
@@ -48,14 +61,20 @@
       {{range .Participants}}
       <tr class="{{if not .Active}}row-inactive{{end}}">
         <td>
-          {{if .PhotoPath}}
-          <img src="{{.PhotoPath}}" alt="{{.Name}}" class="table-avatar">
+          {{if .StickerPath}}
+          <img src="{{.StickerPath}}" alt="{{.Name}}" class="table-avatar">
           {{else}}
           <div class="table-avatar-placeholder">{{initial .Name}}</div>
           {{end}}
         </td>
         <td>{{.Name}}</td>
-        <td>{{.Nickname}}</td>
+        <td>{{if .StickerNumber}}{{.StickerNumber}}{{end}}</td>
+        <td>{{.GroupName}}</td>
+        <td>{{.PhotoOwner}}</td>
+        <td>{{if eq .Category "special"}}Especial{{else}}Álbum{{end}}</td>
+        <td>
+          {{if eq .ProductionStatus "sticker_done"}}<span class="badge badge-green">Figurinha feita</span>{{else if eq .ProductionStatus "photo_received"}}<span class="badge badge-blue">Foto recebida</span>{{else}}<span class="badge badge-gray">Pendente foto</span>{{end}}
+        </td>
         <td><code>{{.Token}}</code></td>
         <td>{{if .Active}}<span class="badge badge-green">Ativo</span>{{else}}<span class="badge badge-gray">Inativo</span>{{end}}</td>
         <td><a href="/admin/qr/{{.Token}}" target="_blank" class="btn btn-sm btn-outline">QR</a></td>

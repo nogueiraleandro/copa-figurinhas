@@ -12,6 +12,7 @@
   <div class="nav-links">
     <a href="/admin/preflight">Pre-voo</a>
     <a href="/admin/participants" class="active">Participantes</a>
+    <a href="/admin/production">Produção</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR verso</a>
     <a href="/admin/cards">Figurinhas</a>
@@ -40,6 +41,39 @@
         <label>Apelido (exibido no álbum)</label>
         <input type="text" name="nickname" class="form-input" value="{{if .Participant}}{{.Participant.Nickname}}{{end}}">
       </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nº da figurinha</label>
+          <input type="number" name="sticker_number" class="form-input" min="0" value="{{if .Participant}}{{.Participant.StickerNumber}}{{end}}">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          {{$cat := "album"}}{{if .Participant}}{{if .Participant.Category}}{{$cat = .Participant.Category}}{{end}}{{end}}
+          <select name="category" class="form-input">
+            <option value="album" {{if eq $cat "album"}}selected{{end}}>Álbum</option>
+            <option value="special" {{if eq $cat "special"}}selected{{end}}>Especial</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Grupo/Família</label>
+          <input type="text" name="group_name" class="form-input" value="{{if .Participant}}{{.Participant.GroupName}}{{end}}">
+        </div>
+        <div class="form-group">
+          <label>Responsável pela foto</label>
+          <input type="text" name="photo_owner" class="form-input" value="{{if .Participant}}{{.Participant.PhotoOwner}}{{end}}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status de produção</label>
+        {{$status := "pending_photo"}}{{if .Participant}}{{if .Participant.ProductionStatus}}{{$status = .Participant.ProductionStatus}}{{end}}{{end}}
+        <select name="production_status" class="form-input">
+          <option value="pending_photo" {{if eq $status "pending_photo"}}selected{{end}}>Pendente foto</option>
+          <option value="photo_received" {{if eq $status "photo_received"}}selected{{end}}>Foto recebida</option>
+          <option value="sticker_done" {{if eq $status "sticker_done"}}selected{{end}}>Figurinha feita</option>
+        </select>
+      </div>
       <div class="form-group">
         <label>Time</label>
         <input type="text" name="team" class="form-input" placeholder="PALMEIRAS (BR)" value="{{if .Participant}}{{.Participant.Team}}{{end}}">
@@ -62,14 +96,24 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Foto (JPG/PNG)</label>
+        <label>Foto original recebida (JPG/PNG)</label>
         {{if .Participant}}{{if .Participant.PhotoPath}}
         <div style="margin-bottom:0.5rem">
-          <img src="{{.Participant.PhotoPath}}" alt="Foto atual" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
+          <img src="{{.Participant.PhotoPath}}" alt="Foto original atual" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
           <span class="hint">Foto atual — envie nova para substituir</span>
         </div>
         {{end}}{{end}}
-        <input type="file" name="photo" class="form-input" accept="image/*">
+        <input type="file" name="original_photo" class="form-input" accept="image/*">
+      </div>
+      <div class="form-group">
+        <label>Figurinha pronta (ChatGPT/Gemini/outro)</label>
+        {{if .Participant}}{{if .Participant.StickerPath}}
+        <div style="margin-bottom:0.5rem">
+          <img src="{{.Participant.StickerPath}}" alt="Figurinha atual" style="width:80px;height:100px;object-fit:contain;border-radius:8px;background:#fff;">
+          <span class="hint">Figurinha final atual - enviar nova marca como feita.</span>
+        </div>
+        {{end}}{{end}}
+        <input type="file" name="sticker" class="form-input" accept="image/*">
       </div>
       <div class="form-group">
         <label>2ª foto (opcional — outro ângulo da mesma pessoa)</label>
@@ -118,6 +162,10 @@
         </label>
       </div>
       {{end}}
+      <div class="form-group">
+        <label>Observações</label>
+        <textarea name="notes" class="form-input" rows="3">{{if .Participant}}{{.Participant.Notes}}{{end}}</textarea>
+      </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Salvar</button>
         <a href="/admin/participants" class="btn btn-outline">Cancelar</a>

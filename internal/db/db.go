@@ -33,9 +33,16 @@ func migrate(db *sql.DB) error {
 CREATE TABLE IF NOT EXISTS participant (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     token            TEXT    NOT NULL UNIQUE,
+    sticker_number   INTEGER NOT NULL DEFAULT 0,
     name             TEXT    NOT NULL,
     nickname         TEXT    NOT NULL DEFAULT '',
     photo_path       TEXT    NOT NULL DEFAULT '',
+    sticker_path     TEXT    NOT NULL DEFAULT '',
+    group_name       TEXT    NOT NULL DEFAULT '',
+    photo_owner      TEXT    NOT NULL DEFAULT '',
+    category         TEXT    NOT NULL DEFAULT 'album',
+    production_status TEXT   NOT NULL DEFAULT 'pending_photo',
+    notes            TEXT    NOT NULL DEFAULT '',
     active           INTEGER NOT NULL DEFAULT 1,
     claimed_device_id INTEGER REFERENCES device(id),
     created_at       TEXT    NOT NULL
@@ -107,10 +114,23 @@ CREATE INDEX IF NOT EXISTS idx_device_cookie ON device(cookie_token);
 		`ALTER TABLE participant ADD COLUMN height TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participant ADD COLUMN weight TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participant ADD COLUMN phrase TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN sticker_number INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE participant ADD COLUMN sticker_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN group_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN photo_owner TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participant ADD COLUMN category TEXT NOT NULL DEFAULT 'album'`,
+		`ALTER TABLE participant ADD COLUMN production_status TEXT NOT NULL DEFAULT 'pending_photo'`,
+		`ALTER TABLE participant ADD COLUMN notes TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
+	}
+	if _, err := db.Exec(`UPDATE participant SET sticker_path=photo_path WHERE sticker_path='' AND photo_path<>''`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE participant SET production_status='sticker_done' WHERE sticker_path<>'' AND production_status='pending_photo'`); err != nil {
+		return err
 	}
 	return nil
 }

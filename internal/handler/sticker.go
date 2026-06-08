@@ -35,7 +35,7 @@ func (h *StickerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		renderError(w, h.tmpl, "QR inválido. Chame o organizador.", http.StatusNotFound)
 		return
 	}
-	if !sticker.Active {
+	if !sticker.Active || sticker.Category != model.ParticipantCategoryAlbum {
 		renderError(w, h.tmpl, "Esta figurinha não está ativa. Chame o organizador.", http.StatusGone)
 		return
 	}
@@ -93,7 +93,7 @@ func (h *StickerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to reveal page if new, otherwise to album
 	if isNew {
-		http.Redirect(w, r, "/reveal?name="+urlEncode(sticker.Name)+"&photo="+urlEncode(sticker.PhotoPath)+"&complete="+boolStr(complete), http.StatusSeeOther)
+		http.Redirect(w, r, "/reveal?name="+urlEncode(sticker.Name)+"&photo="+urlEncode(sticker.StickerPath)+"&complete="+boolStr(complete), http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/album?already=1", http.StatusSeeOther)
 	}
@@ -129,7 +129,7 @@ func (h *ConfirmHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		renderError(w, h.tmpl, "QR inválido. Chame o organizador.", http.StatusNotFound)
 		return
 	}
-	if !sticker.Active {
+	if !sticker.Active || sticker.Category != model.ParticipantCategoryAlbum {
 		renderError(w, h.tmpl, "Esta figurinha não está ativa.", http.StatusGone)
 		return
 	}
@@ -209,6 +209,10 @@ func (h *ReclaimHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sticker, err := h.store.GetParticipantByToken(token)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !sticker.Active || sticker.Category != model.ParticipantCategoryAlbum {
+		http.Error(w, "inactive", http.StatusGone)
 		return
 	}
 

@@ -26,6 +26,10 @@ type Store struct {
 	db *sql.DB
 }
 
+const participantColumns = `id, token, sticker_number, name, nickname, photo_path, sticker_path,
+	group_name, photo_owner, category, production_status, notes,
+	team, info_date, height, weight, phrase, active, claimed_device_id, created_at`
+
 // NewStore creates a Store.
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
@@ -84,38 +88,60 @@ func (s *Store) SaveSetting(set model.Setting) error {
 // ---- Participants ----
 
 func (s *Store) CreateParticipant(name, nickname, photoPath string) (*model.Participant, error) {
+	p := &model.Participant{
+		Name:        name,
+		Nickname:    nickname,
+		PhotoPath:   photoPath,
+		StickerPath: photoPath,
+		Category:    model.ParticipantCategoryAlbum,
+	}
+	if photoPath != "" {
+		p.ProductionStatus = model.ProductionStickerDone
+	} else {
+		p.ProductionStatus = model.ProductionPendingPhoto
+	}
+	return s.CreateParticipantWithDetails(p)
+}
+
+func (s *Store) CreateParticipantWithDetails(p *model.Participant) (*model.Participant, error) {
 	token, err := randomHex(8) // 16-char hex token
 	if err != nil {
 		return nil, err
 	}
+	normalizeParticipant(p)
 	now := idb.TimeToString(time.Now())
-	res, err := s.db.Exec(`INSERT INTO participant (token, name, nickname, photo_path, active, created_at)
-		VALUES (?, ?, ?, ?, 1, ?)`, token, name, nickname, photoPath, now)
+	res, err := s.db.Exec(`INSERT INTO participant (
+			token, sticker_number, name, nickname, photo_path, sticker_path,
+			group_name, photo_owner, category, production_status, notes,
+			team, info_date, height, weight, phrase, active, created_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+		token, p.StickerNumber, p.Name, p.Nickname, p.PhotoPath, p.StickerPath,
+		p.GroupName, p.PhotoOwner, p.Category, p.ProductionStatus, p.Notes,
+		p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase, now)
 	if err != nil {
 		return nil, fmt.Errorf("insert participant: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return &model.Participant{
-		ID: id, Token: token, Name: name, Nickname: nickname,
-		PhotoPath: photoPath, Active: true, CreatedAt: time.Now(),
-	}, nil
+	p.ID = id
+	p.Token = token
+	p.Active = true
+	p.CreatedAt = time.Now()
+	return p, nil
 }
 
 func (s *Store) GetParticipantByToken(token string) (*model.Participant, error) {
 	return s.scanParticipant(s.db.QueryRow(
-		`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
-		 FROM participant WHERE token=?`, token))
+		`SELECT `+participantColumns+` FROM participant WHERE token=?`, token))
 }
 
 func (s *Store) GetParticipantByID(id int64) (*model.Participant, error) {
 	return s.scanParticipant(s.db.QueryRow(
-		`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
-		 FROM participant WHERE id=?`, id))
+		`SELECT `+participantColumns+` FROM participant WHERE id=?`, id))
 }
 
 func (s *Store) ListParticipants() ([]*model.Participant, error) {
-	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
-		FROM participant ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + participantColumns + ` FROM participant ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +158,7 @@ func (s *Store) ListParticipants() ([]*model.Participant, error) {
 }
 
 func (s *Store) ListActiveParticipants() ([]*model.Participant, error) {
-	rows, err := s.db.Query(`SELECT id, token, name, nickname, photo_path, team, info_date, height, weight, phrase, active, claimed_device_id, created_at
-		FROM participant WHERE active=1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + participantColumns + ` FROM participant WHERE active=1 AND category='album' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -151,13 +176,37 @@ func (s *Store) ListActiveParticipants() ([]*model.Participant, error) {
 
 func (s *Store) CountActiveParticipants() (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM participant WHERE active=1`).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM participant WHERE active=1 AND category='album'`).Scan(&n)
 	return n, err
 }
 
+func (s *Store) ListPrintableParticipants() ([]*model.Participant, error) {
+	rows, err := s.db.Query(`SELECT ` + participantColumns + ` FROM participant WHERE active=1 ORDER BY category, sticker_number, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*model.Participant
+	for rows.Next() {
+		p, err := s.scanParticipantRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) UpdateParticipant(p *model.Participant) error {
-	_, err := s.db.Exec(`UPDATE participant SET name=?, nickname=?, photo_path=?, team=?, info_date=?, height=?, weight=?, phrase=?, active=? WHERE id=?`,
-		p.Name, p.Nickname, p.PhotoPath, p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase, boolToInt(p.Active), p.ID)
+	normalizeParticipant(p)
+	_, err := s.db.Exec(`UPDATE participant SET
+			sticker_number=?, name=?, nickname=?, photo_path=?, sticker_path=?,
+			group_name=?, photo_owner=?, category=?, production_status=?, notes=?,
+			team=?, info_date=?, height=?, weight=?, phrase=?, active=?
+		WHERE id=?`,
+		p.StickerNumber, p.Name, p.Nickname, p.PhotoPath, p.StickerPath,
+		p.GroupName, p.PhotoOwner, p.Category, p.ProductionStatus, p.Notes,
+		p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase, boolToInt(p.Active), p.ID)
 	return err
 }
 
@@ -171,7 +220,11 @@ func (s *Store) scanParticipant(row *sql.Row) (*model.Participant, error) {
 	var deviceID sql.NullInt64
 	var createdStr string
 	var activeInt int
-	err := row.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr)
+	err := row.Scan(
+		&p.ID, &p.Token, &p.StickerNumber, &p.Name, &p.Nickname, &p.PhotoPath, &p.StickerPath,
+		&p.GroupName, &p.PhotoOwner, &p.Category, &p.ProductionStatus, &p.Notes,
+		&p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -183,6 +236,7 @@ func (s *Store) scanParticipant(row *sql.Row) (*model.Participant, error) {
 		p.ClaimedDeviceID = &deviceID.Int64
 	}
 	p.CreatedAt, _ = idb.StringToTime(createdStr)
+	normalizeParticipant(&p)
 	return &p, nil
 }
 
@@ -191,7 +245,11 @@ func (s *Store) scanParticipantRow(rows *sql.Rows) (*model.Participant, error) {
 	var deviceID sql.NullInt64
 	var createdStr string
 	var activeInt int
-	err := rows.Scan(&p.ID, &p.Token, &p.Name, &p.Nickname, &p.PhotoPath, &p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr)
+	err := rows.Scan(
+		&p.ID, &p.Token, &p.StickerNumber, &p.Name, &p.Nickname, &p.PhotoPath, &p.StickerPath,
+		&p.GroupName, &p.PhotoOwner, &p.Category, &p.ProductionStatus, &p.Notes,
+		&p.Team, &p.InfoDate, &p.Height, &p.Weight, &p.Phrase, &activeInt, &deviceID, &createdStr,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +258,7 @@ func (s *Store) scanParticipantRow(rows *sql.Rows) (*model.Participant, error) {
 		p.ClaimedDeviceID = &deviceID.Int64
 	}
 	p.CreatedAt, _ = idb.StringToTime(createdStr)
+	normalizeParticipant(&p)
 	return &p, nil
 }
 
@@ -319,7 +378,7 @@ func (s *Store) CountActiveCollected(ownerID int64) (int, error) {
 	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM collection c
 		INNER JOIN participant p ON p.id = c.sticker_id
-		WHERE c.owner_id=? AND p.active=1`, ownerID).Scan(&n)
+		WHERE c.owner_id=? AND p.active=1 AND p.category='album'`, ownerID).Scan(&n)
 	return n, err
 }
 
@@ -337,7 +396,7 @@ func (s *Store) IsComplete(ownerID int64) (bool, error) {
 	err = s.db.QueryRow(`
 		SELECT COUNT(*) FROM collection c
 		INNER JOIN participant p ON p.id = c.sticker_id
-		WHERE c.owner_id=? AND p.active=1`, ownerID).Scan(&collected)
+		WHERE c.owner_id=? AND p.active=1 AND p.category='album'`, ownerID).Scan(&collected)
 	if err != nil {
 		return false, err
 	}
@@ -391,7 +450,8 @@ func (s *Store) rankingAsOf(asOf *time.Time) ([]*model.RankEntry, error) {
 	}
 
 	rows, err := s.db.Query(fmt.Sprintf(`
-		SELECT p.id, p.name, p.nickname, p.photo_path,
+		SELECT p.id, p.name, p.nickname,
+		       CASE WHEN p.sticker_path <> '' THEN p.sticker_path ELSE p.photo_path END,
 		       COALESCE(col.cnt, 0) as cnt,
 		       COALESCE(col.max_at, '') as max_at
 		FROM participant p
@@ -400,11 +460,11 @@ func (s *Store) rankingAsOf(asOf *time.Time) ([]*model.RankEntry, error) {
 			       COUNT(*) as cnt,
 			       MAX(c.collected_at) as max_at
 			FROM collection c
-			INNER JOIN participant ps ON ps.id = c.sticker_id AND ps.active=1
+			INNER JOIN participant ps ON ps.id = c.sticker_id AND ps.active=1 AND ps.category='album'
 			%s
 			GROUP BY c.owner_id
 		) col ON col.owner_id = p.id
-		WHERE p.active=1 AND p.claimed_device_id IS NOT NULL
+		WHERE p.active=1 AND p.category='album' AND p.claimed_device_id IS NOT NULL
 		ORDER BY cnt DESC, max_at ASC
 	`, cutoffClause), args...)
 	if err != nil {
@@ -747,6 +807,10 @@ func (s *Store) RestoreFrom(srcPath string) error {
 	if err != nil {
 		return err
 	}
+	sourceParticipantCols, err := sourceTableColumns(ctx, conn, "participant")
+	if err != nil && tableExists["participant"] {
+		return err
+	}
 
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -766,6 +830,13 @@ func (s *Store) RestoreFrom(srcPath string) error {
 		}
 		if t == "setting" {
 			if err := copySettingFromSource(ctx, tx, sourceSettingCols); err != nil {
+				tx.Rollback() //nolint:errcheck
+				return err
+			}
+			continue
+		}
+		if t == "participant" {
+			if err := copyParticipantFromSource(ctx, tx, sourceParticipantCols); err != nil {
 				tx.Rollback() //nolint:errcheck
 				return err
 			}
@@ -806,6 +877,59 @@ func copySettingFromSource(ctx context.Context, tx *sql.Tx, sourceCols map[strin
 	return nil
 }
 
+func copyParticipantFromSource(ctx context.Context, tx *sql.Tx, sourceCols map[string]bool) error {
+	known := []string{
+		"id", "token", "sticker_number", "name", "nickname", "photo_path", "sticker_path",
+		"group_name", "photo_owner", "category", "production_status", "notes",
+		"team", "info_date", "height", "weight", "phrase", "active", "claimed_device_id", "created_at",
+	}
+	var dstCols, srcExprs []string
+	for _, c := range known {
+		dstCols = append(dstCols, c)
+		if sourceCols[c] {
+			srcExprs = append(srcExprs, `"`+c+`"`)
+			continue
+		}
+		switch c {
+		case "sticker_number":
+			srcExprs = append(srcExprs, "0")
+		case "sticker_path":
+			if sourceCols["photo_path"] {
+				srcExprs = append(srcExprs, `"photo_path"`)
+			} else {
+				srcExprs = append(srcExprs, "''")
+			}
+		case "category":
+			srcExprs = append(srcExprs, "'album'")
+		case "production_status":
+			if sourceCols["photo_path"] {
+				srcExprs = append(srcExprs, `CASE WHEN "photo_path" <> '' THEN 'sticker_done' ELSE 'pending_photo' END`)
+			} else {
+				srcExprs = append(srcExprs, "'pending_photo'")
+			}
+		default:
+			srcExprs = append(srcExprs, defaultParticipantSource(c))
+		}
+	}
+	q := fmt.Sprintf(`INSERT INTO participant (%s) SELECT %s FROM src.participant`,
+		joinQuotedCols(dstCols), strings.Join(srcExprs, ","))
+	if _, err := tx.ExecContext(ctx, q); err != nil {
+		return fmt.Errorf("restaurar participant: %w", err)
+	}
+	return nil
+}
+
+func defaultParticipantSource(col string) string {
+	switch col {
+	case "active":
+		return "1"
+	case "claimed_device_id":
+		return "NULL"
+	default:
+		return "''"
+	}
+}
+
 func sourceTableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
 	var n int
 	err := conn.QueryRowContext(ctx,
@@ -840,6 +964,29 @@ func joinQuotedCols(cols []string) string {
 		out = append(out, `"`+c+`"`)
 	}
 	return strings.Join(out, ",")
+}
+
+func normalizeParticipant(p *model.Participant) {
+	p.Name = strings.TrimSpace(p.Name)
+	p.Nickname = strings.TrimSpace(p.Nickname)
+	p.PhotoPath = strings.TrimSpace(p.PhotoPath)
+	p.StickerPath = strings.TrimSpace(p.StickerPath)
+	p.GroupName = strings.TrimSpace(p.GroupName)
+	p.PhotoOwner = strings.TrimSpace(p.PhotoOwner)
+	p.Category = strings.TrimSpace(p.Category)
+	if p.Category == "" {
+		p.Category = model.ParticipantCategoryAlbum
+	}
+	p.ProductionStatus = strings.TrimSpace(p.ProductionStatus)
+	if p.ProductionStatus == "" {
+		p.ProductionStatus = model.ProductionPendingPhoto
+	}
+	p.Notes = strings.TrimSpace(p.Notes)
+	p.Team = strings.TrimSpace(p.Team)
+	p.InfoDate = strings.TrimSpace(p.InfoDate)
+	p.Height = strings.TrimSpace(p.Height)
+	p.Weight = strings.TrimSpace(p.Weight)
+	p.Phrase = strings.TrimSpace(p.Phrase)
 }
 
 func boolToInt(b bool) int {

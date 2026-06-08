@@ -253,6 +253,122 @@ func TestAdminUseAIWithoutKeyFallsBackToOriginalPhoto(t *testing.T) {
 	}
 }
 
+func TestAdminOriginalAndReadyStickerUploadsUpdateProductionStatus(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("name", "Com Foto") //nolint:errcheck
+	orig, _ := mw.CreateFormFile("original_photo", "original.png")
+	orig.Write(onePixelPNG()) //nolint:errcheck
+	mw.Close()
+
+	req, _ := http.NewRequest("POST", srv.URL+"/admin/participants/new", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("new original upload: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("cadastro esperava 303, got %d", resp.StatusCode)
+	}
+	people, _ := store.ListParticipants()
+	if len(people) != 1 {
+		t.Fatalf("esperava 1 participante, got %d", len(people))
+	}
+	if people[0].PhotoPath == "" || people[0].StickerPath != "" || people[0].ProductionStatus != "photo_received" {
+		t.Fatalf("foto original deveria marcar foto_recebida sem figurinha pronta: %#v", people[0])
+	}
+
+	buf.Reset()
+	mw = multipart.NewWriter(&buf)
+	mw.WriteField("name", "Com Foto") //nolint:errcheck
+	mw.WriteField("active", "on")     //nolint:errcheck
+	ready, _ := mw.CreateFormFile("sticker", "pronta.png")
+	ready.Write(onePixelPNG()) //nolint:errcheck
+	mw.Close()
+	req, _ = http.NewRequest("POST", srv.URL+"/admin/participants/"+itoa(people[0].ID)+"/edit", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("edit ready upload: %v", err)
+	}
+	resp.Body.Close()
+	updated, _ := store.GetParticipantByID(people[0].ID)
+	if updated.StickerPath == "" || updated.ProductionStatus != "sticker_done" {
+		t.Fatalf("figurinha pronta deveria marcar feita: %#v", updated)
+	}
+}
+
+func TestAdminProductionPageImportAndFilters(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/production")
+	if err != nil {
+		t.Fatalf("production get: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "Produ") {
+		t.Fatalf("production deveria renderizar, status=%d", resp.StatusCode)
+	}
+
+	resp, err = client.PostForm(srv.URL+"/admin/production/import-initial", url.Values{})
+	if err != nil {
+		t.Fatalf("import initial: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("import inicial esperava 303, got %d", resp.StatusCode)
+	}
+	people, _ := store.ListParticipants()
+	if len(people) < 70 {
+		t.Fatalf("lista inicial deveria dividir pessoas e especiais, got %d", len(people))
+	}
+	var bia, vinicius, special int
+	for _, p := range people {
+		if p.Name == "Bia" {
+			bia++
+		}
+		if p.Name == "Vinicius" {
+			vinicius++
+		}
+		if p.Category == "special" {
+			special++
+		}
+	}
+	if bia != 1 || vinicius != 1 || special == 0 {
+		t.Fatalf("import deveria dividir Bia/Vinicius e criar especiais: bia=%d vini=%d special=%d", bia, vinicius, special)
+	}
+
+	if err := store.SetParticipantActive(people[0].ID, false); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	resp, err = client.Get(srv.URL + "/admin/participants")
+	if err != nil {
+		t.Fatalf("participants: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(body), people[0].Name) {
+		t.Fatalf("participantes desativados deveriam ficar ocultos por padrao")
+	}
+	resp, err = client.Get(srv.URL + "/admin/participants?show_inactive=1")
+	if err != nil {
+		t.Fatalf("participants inactive: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), people[0].Name) {
+		t.Fatalf("show_inactive=1 deveria mostrar desativado")
+	}
+}
+
 // Travar elenco bloqueia adicionar novos participantes (correcao de bug).
 func TestAdminRosterLockBlocksAdd(t *testing.T) {
 	srv, store := newAdminTestServer(t)

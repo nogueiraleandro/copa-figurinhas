@@ -7,6 +7,7 @@ import (
 	"time"
 
 	idb "copa/internal/db"
+	"copa/internal/model"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -464,6 +465,43 @@ func TestListActiveParticipants(t *testing.T) {
 		if !p.Active {
 			t.Fatalf("ListActiveParticipants nao deveria retornar inativo: %q", p.Name)
 		}
+	}
+}
+
+func TestSpecialParticipantsDoNotCountForAlbum(t *testing.T) {
+	s := newTestStore(t)
+	albumID := mustParticipant(t, s, "Album")
+	special, err := s.CreateParticipantWithDetails(&model.Participant{
+		Name:             "Especial",
+		Category:         model.ParticipantCategorySpecial,
+		ProductionStatus: model.ProductionPendingPhoto,
+	})
+	if err != nil {
+		t.Fatalf("create special: %v", err)
+	}
+	if _, err := s.CreateDevice(albumID); err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	s.AddToCollection(albumID, albumID)    //nolint:errcheck
+	s.AddToCollection(albumID, special.ID) //nolint:errcheck
+
+	total, err := s.CountActiveParticipants()
+	if err != nil {
+		t.Fatalf("count active: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("especial nao deveria contar no total do album, got %d", total)
+	}
+	if complete, _ := s.IsComplete(albumID); !complete {
+		t.Fatalf("album deveria estar completo coletando so participante de album")
+	}
+	active, _ := s.ListActiveParticipants()
+	if len(active) != 1 || active[0].ID != albumID {
+		t.Fatalf("ListActiveParticipants deveria excluir especiais, got %#v", active)
+	}
+	printable, _ := s.ListPrintableParticipants()
+	if len(printable) != 2 {
+		t.Fatalf("ListPrintableParticipants deveria incluir especiais, got %d", len(printable))
 	}
 }
 
