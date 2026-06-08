@@ -161,7 +161,12 @@ func (h *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if setting.AdminPasswordHash == "" {
-		// First login: set password
+		// First login: set password. Recusa senha vazia para nao criar
+		// silenciosamente um admin sem senha por um submit em branco.
+		if strings.TrimSpace(password) == "" {
+			h.tmpl.Render(w, "admin_login.html", map[string]interface{}{"Error": "Defina uma senha não vazia."})
+			return
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			http.Error(w, "hash error", http.StatusInternalServerError)

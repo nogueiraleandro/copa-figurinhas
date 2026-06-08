@@ -114,6 +114,32 @@ func TestAdminLoginFlow(t *testing.T) {
 	}
 }
 
+// 1o login com senha vazia e recusado (nao cria admin sem senha por engano).
+func TestAdminFirstLoginRejectsEmptyPassword(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+
+	resp, err := client.PostForm(srv.URL+"/admin", url.Values{"password": {"   "}})
+	if err != nil {
+		t.Fatalf("login vazio: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "não vazia") {
+		t.Fatalf("senha vazia deveria mostrar erro, status=%d", resp.StatusCode)
+	}
+	// Nenhum hash deve ter sido salvo.
+	if setting, _ := store.GetSetting(); setting.AdminPasswordHash != "" {
+		t.Fatalf("senha vazia nao deveria definir hash de admin")
+	}
+
+	// Depois disso, um 1o login valido ainda funciona.
+	loginAdmin(t, srv, client, "segredo123")
+	if setting, _ := store.GetSetting(); setting.AdminPasswordHash == "" {
+		t.Fatalf("login valido deveria definir hash de admin")
+	}
+}
+
 // Import em massa: CSV (nome,apelido,imagem) + arquivos de imagem.
 func TestAdminBulkImport(t *testing.T) {
 	srv, store := newAdminTestServer(t)
