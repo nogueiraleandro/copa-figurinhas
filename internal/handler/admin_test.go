@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -602,6 +603,185 @@ func onePixelPNG() []byte {
 		0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 	}
 }
+
+// Listagem de participantes renderiza a tabela.
+func TestAdminParticipantsList(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	store.CreateParticipant("Diego", "", "") //nolint:errcheck
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/participants")
+	if err != nil {
+		t.Fatalf("participants: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("participants esperava 200, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), "Diego") {
+		t.Fatalf("a listagem deveria conter o participante 'Diego'")
+	}
+}
+
+// Editar participante via POST atualiza nome e redireciona.
+func TestAdminEditParticipant(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	p, _ := store.CreateParticipant("Erica", "", "")
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	// GET do formulario de edicao.
+	resp, err := client.Get(srv.URL + "/admin/participants/" + itoa(p.ID) + "/edit")
+	if err != nil {
+		t.Fatalf("edit form: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("edit GET esperava 200, got %d", resp.StatusCode)
+	}
+
+	// POST com novo nome.
+	resp, err = client.PostForm(srv.URL+"/admin/participants/"+itoa(p.ID)+"/edit", url.Values{
+		"name":   {"Erica Souza"},
+		"active": {"on"},
+	})
+	if err != nil {
+		t.Fatalf("edit post: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("edit POST esperava 303, got %d", resp.StatusCode)
+	}
+	updated, _ := store.GetParticipantByID(p.ID)
+	if updated.Name != "Erica Souza" {
+		t.Fatalf("nome deveria virar 'Erica Souza', got %q", updated.Name)
+	}
+}
+
+// Excluir (desativar) participante: GET é 405; POST desativa.
+func TestAdminDeleteParticipant(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	p, _ := store.CreateParticipant("Fabio", "", "")
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	// GET deve ser rejeitado (405).
+	resp, err := client.Get(srv.URL + "/admin/participants/" + itoa(p.ID) + "/delete")
+	if err != nil {
+		t.Fatalf("delete get: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("delete GET esperava 405, got %d", resp.StatusCode)
+	}
+
+	// POST desativa.
+	resp, err = client.PostForm(srv.URL+"/admin/participants/"+itoa(p.ID)+"/delete", url.Values{})
+	if err != nil {
+		t.Fatalf("delete post: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete POST esperava 303, got %d", resp.StatusCode)
+	}
+	after, _ := store.GetParticipantByID(p.ID)
+	if after.Active {
+		t.Fatalf("participante deveria estar inativo apos delete")
+	}
+}
+
+// Transferência de coleção entre participantes.
+func TestAdminTransfer(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	src, _ := store.CreateParticipant("Gabi Origem", "", "")
+	dst, _ := store.CreateParticipant("Gui Destino", "", "")
+	outro, _ := store.CreateParticipant("Outro", "", "")
+	store.AddToCollection(src.ID, outro.ID) //nolint:errcheck
+
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	// GET renderiza a tela de transferencia.
+	resp, err := client.Get(srv.URL + "/admin/transfer")
+	if err != nil {
+		t.Fatalf("transfer get: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("transfer GET esperava 200, got %d", resp.StatusCode)
+	}
+
+	// POST transfere src -> dst.
+	resp, err = client.PostForm(srv.URL+"/admin/transfer", url.Values{
+		"src_id": {itoa(src.ID)},
+		"dst_id": {itoa(dst.ID)},
+	})
+	if err != nil {
+		t.Fatalf("transfer post: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("transfer POST esperava 303, got %d", resp.StatusCode)
+	}
+	if has, _ := store.HasSticker(dst.ID, outro.ID); !has {
+		t.Fatalf("destino deveria receber a figurinha transferida")
+	}
+}
+
+// QR image em PNG para um token de participante.
+func TestAdminQRImage(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	p, _ := store.CreateParticipant("Helena", "", "")
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/qr/" + p.Token)
+	if err != nil {
+		t.Fatalf("qr image: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("qr esperava 200, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("qr Content-Type = %q, want image/png", ct)
+	}
+	// Assinatura PNG.
+	if len(body) < 8 || string(body[1:4]) != "PNG" {
+		t.Fatalf("resposta nao parece um PNG")
+	}
+}
+
+// Logout admin limpa a sessão e redireciona pro login.
+func TestAdminLogout(t *testing.T) {
+	srv, _ := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/logout")
+	if err != nil {
+		t.Fatalf("logout: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("logout esperava 303, got %d", resp.StatusCode)
+	}
+
+	// Apos logout, rota protegida deve redirecionar pro login.
+	resp, err = client.Get(srv.URL + "/admin/dashboard")
+	if err != nil {
+		t.Fatalf("dashboard pos-logout: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("pos-logout dashboard deveria redirecionar (303), got %d", resp.StatusCode)
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // rankLANIPs deve descartar IP público/link-local e colocar o IP de cliente
 // real (192.168.0.109 no evento) à frente dos adaptadores virtuais (.1).
