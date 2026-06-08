@@ -169,6 +169,44 @@ func TestAlbumLoadsMascot(t *testing.T) {
 	}
 }
 
+// Sob rede lenta (latencia alta + banda baixa, como o Wi-Fi de um evento), o
+// album ainda carrega e fica utilizavel, e as figurinhas usam loading="lazy"
+// para nao baixar tudo de uma vez. Ancora a melhoria de lazy loading num teste.
+func TestAlbumUnderSlowNetwork(t *testing.T) {
+	a := startApp(t)
+	ctx, _ := newBrowser(t)
+
+	// Alguns participantes coletados COM foto, para o grid renderizar <img>
+	// (o caminho pode 404 — so checamos o atributo loading=lazy no DOM).
+	ana, _ := a.store.CreateParticipant("Ana", "", "/uploads/ana.jpg")
+	dev, err := a.store.CreateDevice(ana.ID)
+	if err != nil {
+		t.Fatalf("device: %v", err)
+	}
+	a.store.AddToCollection(ana.ID, ana.ID) //nolint:errcheck
+	for _, nome := range []string{"Bruno", "Carla", "Diego", "Elis"} {
+		p, _ := a.store.CreateParticipant(nome, "", "/uploads/"+nome+".jpg")
+		a.store.AddToCollection(ana.ID, p.ID) //nolint:errcheck
+	}
+
+	var lazyCount int
+	err = chromedp.Run(ctx,
+		network.Enable(),
+		throttleNetwork(400, 200*1024/8, 100*1024/8), // ~400ms RTT, ~200kbps down
+		setSessionCookie(a.srv.URL, dev.CookieToken),
+		chromedp.Navigate(a.srv.URL+"/album"),
+		// Mesmo sob throttle, o grid deve ficar visivel (pagina utilizavel).
+		chromedp.WaitVisible(`.sticker-grid`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('img.sticker-photo[loading="lazy"]').length`, &lazyCount),
+	)
+	if err != nil {
+		t.Fatalf("navegacao /album sob rede lenta: %v", err)
+	}
+	if lazyCount < 1 {
+		t.Fatalf("as figurinhas do album deveriam usar loading=lazy; encontrei %d", lazyCount)
+	}
+}
+
 // /reveal mostra o nome e a inicial maiuscula (renderizada pelo template).
 func TestRevealShowsName(t *testing.T) {
 	a := startApp(t)
@@ -272,6 +310,20 @@ func waitTextContains(sel, substr string, timeout time.Duration) chromedp.Action
 			case <-time.After(200 * time.Millisecond):
 			}
 		}
+	})
+}
+
+// throttleNetwork emula uma rede lenta (latencia em ms, throughput em bytes/s)
+// via CDP, simulando o Wi-Fi ruim de um evento.
+func throttleNetwork(latencyMs float64, downBytesPerSec, upBytesPerSec float64) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		// URLPattern vazio => condicao global (vale para todas as requisicoes).
+		_, err := network.EmulateNetworkConditionsByRule(false, []*network.Conditions{{
+			Latency:            latencyMs,
+			DownloadThroughput: downBytesPerSec,
+			UploadThroughput:   upBytesPerSec,
+		}}).Do(ctx)
+		return err
 	})
 }
 
