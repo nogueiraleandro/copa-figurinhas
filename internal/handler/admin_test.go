@@ -417,8 +417,12 @@ func TestAdminQRSheetRenders(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("qrsheet esperava 200, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "/s/"+p.Token) {
-		t.Fatalf("folha de QR deveria conter a URL do participante (/s/%s)", p.Token)
+	html := string(body)
+	if !strings.Contains(html, p.Name) {
+		t.Fatalf("folha de QR deveria conter o nome do participante (%q)", p.Name)
+	}
+	if !strings.Contains(html, "data:image/png;base64,") {
+		t.Fatalf("folha de QR deveria conter o QR embutido (data:image/png;base64,)")
 	}
 }
 
@@ -563,7 +567,7 @@ func TestAdminRestoreInvalidFile(t *testing.T) {
 	}
 }
 
-// Página de cartões renderiza com a URL (/s/token) de cada participante.
+// Página de figurinhas (frente) renderiza com o nome de cada participante.
 func TestAdminCardsRenders(t *testing.T) {
 	srv, store := newAdminTestServer(t)
 	p, _ := store.CreateParticipant("Carla", "", "")
@@ -579,8 +583,8 @@ func TestAdminCardsRenders(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("cards esperava 200, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "/s/"+p.Token) {
-		t.Fatalf("cartões deveriam conter a URL do participante (/s/%s)", p.Token)
+	if !strings.Contains(string(body), p.Name) {
+		t.Fatalf("figurinhas deveriam conter o nome do participante (%q)", p.Name)
 	}
 }
 

@@ -797,7 +797,8 @@ func (h *AdminHandler) handleQRSheet(w http.ResponseWriter, r *http.Request) {
 	var entries []qrEntry
 	for _, p := range participants {
 		stickerURL := qr.StickerURL(setting.BaseURL, p.Token)
-		b64, _ := generateQRBase64(stickerURL)
+		// Alta definição (1024px) — sobre ~50mm dá 500+ DPI, nítido para o verso.
+		b64, _ := qr.GenerateBase64(stickerURL, 1024)
 		entries = append(entries, qrEntry{
 			Participant: p,
 			QRBase64:    b64,
@@ -1108,27 +1109,27 @@ func (h *AdminHandler) handleTransfer(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/dashboard?transferred=1", http.StatusSeeOther)
 }
 
-// ---- Cartões para impressão ----
+// ---- Figurinhas (frente) para impressão em papel fotográfico 10x15 ----
 
+// handleCards renderiza a frente das figurinhas (foto + nome) em folhas 10x15,
+// duas figurinhas retrato lado a lado por folha. O verso (QR) é impresso à parte
+// em A4 via /admin/qrsheet.
 func (h *AdminHandler) handleCards(w http.ResponseWriter, r *http.Request) {
-	setting, _ := h.store.GetSetting()
 	participants, _ := h.store.ListActiveParticipants()
 
-	type cardEntry struct {
-		Participant *model.Participant
-		QRBase64    string
-		URL         string
-	}
-	var entries []cardEntry
-	for _, p := range participants {
-		stickerURL := qr.StickerURL(setting.BaseURL, p.Token)
-		b64, _ := generateQRBase64(stickerURL)
-		entries = append(entries, cardEntry{Participant: p, QRBase64: b64, URL: stickerURL})
+	// Agrupa em pares: cada par cai numa folha 10x15 (duas figurinhas lado a lado).
+	var sheets [][]*model.Participant
+	for i := 0; i < len(participants); i += 2 {
+		end := i + 2
+		if end > len(participants) {
+			end = len(participants)
+		}
+		sheets = append(sheets, participants[i:end])
 	}
 
 	h.tmpl.Render(w, "admin_cards.html", map[string]interface{}{
-		"Entries": entries,
-		"BaseURL": setting.BaseURL,
+		"Sheets": sheets,
+		"Total":  len(participants),
 	})
 }
 

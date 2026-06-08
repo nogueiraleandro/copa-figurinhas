@@ -3,14 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Folha de QR - Copa Figurinhas</title>
+<title>QR do verso (A4) - Copa Figurinhas</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
+/* Grade compacta de QRs para A4 sulfite — recortar e colar no verso, sobre o ímã. */
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6mm;
+  max-width: 194mm;
+}
+.qr-item {
+  display: flex; flex-direction: column; align-items: center;
+  break-inside: avoid; page-break-inside: avoid;
+  padding: 2mm;
+}
+.qr-code-img {
+  width: 50mm; height: 50mm;
+  image-rendering: pixelated; /* QR nítido sem suavização */
+}
+.qr-name {
+  font-weight: 600; font-size: 3.6mm; margin-top: 1.5mm;
+  text-align: center; max-width: 52mm; word-break: break-word;
+}
 @media print {
+  @page { size: A4; margin: 8mm; }
   .admin-nav, .no-print { display: none !important; }
-  body { background: white; }
-  .qr-sheet { padding: 0; }
-  .qr-item { break-inside: avoid; page-break-inside: avoid; }
+  body { background: #fff; }
+  .qr-grid { gap: 5mm; }
 }
 </style>
 </head>
@@ -20,8 +40,8 @@
   <div class="nav-links">
     <a href="/admin/participants">Participantes</a>
     <a href="/admin/bulk">Importar</a>
-    <a href="/admin/qrsheet" class="active">QR Sheet</a>
-    <a href="/admin/cards">Cartões</a>
+    <a href="/admin/qrsheet" class="active">QR verso</a>
+    <a href="/admin/cards">Figurinhas</a>
     <a href="/admin/settings">Config</a>
     <a href="/admin/sistema">Sistema</a>
     <a href="/admin/logout" class="nav-logout">Sair</a>
@@ -29,22 +49,20 @@
 </nav>
 <div class="admin-content">
   <div class="section-header no-print">
-    <h1>Folha de QR Codes para impressão</h1>
+    <h1>QR do verso — A4 sulfite</h1>
     <button onclick="window.print()" class="btn btn-primary">🖨️ Imprimir</button>
   </div>
+  <p class="hint no-print">
+    QR de ~50mm com o nome embaixo. Imprima em <strong>A4 sulfite</strong>, escala
+    <strong>100%</strong>. Recorte cada QR e cole no <strong>verso</strong> da figurinha,
+    sobre o ímã.
+  </p>
 
-  <div class="qr-sheet">
+  <div class="qr-grid">
     {{range .Entries}}
     <div class="qr-item">
-      <div class="qr-sticker">
-        {{if .Participant.PhotoPath}}
-        <img src="{{.Participant.PhotoPath}}" alt="{{.Participant.Name}}" class="qr-photo">
-        {{end}}
-        <div class="qr-name">{{.Participant.Name}}</div>
-        {{if .Participant.Nickname}}<div class="qr-nickname">{{.Participant.Nickname}}</div>{{end}}
-        <img src="data:image/png;base64,{{.QRBase64}}" alt="QR" class="qr-code-img">
-        <div class="qr-url">{{.URL}}</div>
-      </div>
+      <img src="data:image/png;base64,{{.QRBase64}}" alt="QR {{.Participant.Name}}" class="qr-code-img">
+      <div class="qr-name">{{.Participant.Name}}</div>
     </div>
     {{else}}
     <p class="hint">Nenhum participante ativo cadastrado.</p>
