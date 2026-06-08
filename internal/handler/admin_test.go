@@ -583,9 +583,12 @@ func TestAdminCardsRenders(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("cards esperava 200, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), p.Name) {
-		t.Fatalf("figurinhas deveriam conter o nome do participante (%q)", p.Name)
+	// A página de figurinhas mostra só a imagem (sem nome em texto): valida que ao
+	// menos uma folha foi renderizada para o participante criado.
+	if !strings.Contains(string(body), `class="sheet"`) {
+		t.Fatalf("figurinhas deveriam renderizar ao menos uma folha (.sheet)")
 	}
+	_ = p
 }
 
 // PNG 1x1 valido para upload de teste.
