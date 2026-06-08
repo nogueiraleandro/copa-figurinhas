@@ -59,7 +59,7 @@ copa.exe                  ← binário único, ~18 MB
 
 > ✅ **IP confirmado no local do evento:** `192.168.0.109` (rede atual do notebook).
 > Todas as URLs deste guia já usam esse IP. Se o roteador trocar o IP, atualize o
-> `base_url` no admin e regenere a QR Sheet.
+> `base_url` no admin e regenere os QR (Admin → QR verso).
 
 No roteador, reserve o IP `192.168.0.109` para o MAC address do notebook
 (geralmente chamado de "DHCP Reservation" ou "Static Lease" nas configurações).
@@ -129,7 +129,7 @@ http://192.168.0.109:8080
 (sem barra final, com o IP real do notebook na sua rede)
 
 > ⚠️ Esta URL é embutida nos QR codes. Se mudar depois de imprimir, os QRs ficam inválidos.
-> **Configure antes de gerar a QR Sheet.**
+> **Configure antes de gerar os QR (Admin → QR verso).**
 
 ---
 
@@ -157,12 +157,16 @@ Carlos,Carlão,
 - Editar nome/apelido individualmente se necessário.
 - Desativar participantes que não compareceram (não afeta o álbum de ninguém).
 
-### 5.3 Gerar a QR Sheet
+### 5.3 Imprimir as figurinhas e os QR (duas impressões)
 
-**Admin → QR Sheet** — exibe uma folha HTML com o QR de cada participante.
-- Use `Ctrl+P` → "Salvar como PDF" ou imprimir direto.
-- Cada QR leva para `http://192.168.0.109:8080/s/<token>`.
-- **Corte e cole o QR no verso da figurinha física.**
+O fluxo físico usa **dois papéis diferentes** (veja a seção 6 para detalhes):
+
+1. **Admin → Figurinhas** — frente das figurinhas (foto + nome), **2 por folha** em
+   **papel fotográfico 10×15**. Imprima em paisagem, sem margem, escala 100%.
+2. **Admin → QR verso** — QR codes (~50mm + nome) em **A4 sulfite**. Recorte cada QR e
+   cole no **verso** da figurinha, **sobre o ímã**.
+
+> Cada QR leva para `http://192.168.0.109:8080/s/<token>`.
 
 ### 5.4 Travar o elenco (~30 min antes do apito)
 
@@ -187,24 +191,37 @@ O sistema:
 
 ---
 
-## 6. Impressão dos QR codes
+## 6. Impressão das figurinhas e dos QR
 
-### Fluxo recomendado
+São **duas impressões** em papéis diferentes:
 
-1. Cadastrar todos os participantes com foto.
-2. Configurar `base_url` (IP:porta).
-3. Abrir `/admin/qrsheet` → imprimir PDF.
-4. Recortar cada QR.
-5. Colar no verso da figurinha física (papel fotográfico, estilo Panini).
-6. Colocar em envelopes individuais (cada pessoa recebe o próprio envelope).
+### 6.1 Frente — papel fotográfico 10×15 (`/admin/figurinhas`)
 
-### Figurinha com foto
+**Admin → Figurinhas** gera as frentes (foto + nome + selo "⚽ COPA 2026"),
+**2 figurinhas retrato lado a lado por folha 10×15**.
 
-Se usar papel fotográfico ou adesivo:
-- Frente: foto + nome (estilo figurinha Panini).
-- Verso: QR code (da QR Sheet).
+- `Ctrl+P` → selecione o papel **10×15 (4×6")**, orientação **paisagem**,
+  **sem margem** (borderless) e escala **100%**.
+- Recorte na linha tracejada (cada folha vira 2 figurinhas de ~73×100mm).
+- Cole um **ímã** atrás de cada figurinha.
 
-Se quiser imprimir frente-e-verso numa folha só, use o "QR Sheet" e componha manualmente.
+> A nitidez da foto depende do upload: as imagens são reduzidas para no máx. 600px
+> (para o Wi-Fi local). Para uma figurinha de ~73mm isso dá ~200 DPI — bom o
+> suficiente para foto, mas envie fotos nítidas e bem enquadradas.
+
+### 6.2 Verso (QR sobre o ímã) — A4 sulfite (`/admin/qrverso` → `/admin/qrsheet`)
+
+**Admin → QR verso** gera os QR codes em **alta definição (~50mm) com o nome**
+embaixo, em grade compacta (~12 por folha A4).
+
+- `Ctrl+P` → papel **A4**, escala **100%** (papel sulfite comum serve).
+- Recorte cada QR (use o nome para casar com a pessoa certa).
+- Cole o QR no **verso** da figurinha, **por cima do ímã**.
+
+### 6.3 Montagem final
+
+Frente (foto, papel fotográfico) → ímã colado atrás → QR (sulfite) colado sobre o ímã.
+Coloque cada figurinha pronta num envelope individual (cada pessoa recebe o próprio).
 
 ---
 
@@ -218,7 +235,7 @@ Execute este roteiro **pelo menos 1 semana antes** (ou no dia anterior):
 - [ ] Login no admin funciona com a senha escolhida
 - [ ] `base_url` configurada corretamente
 - [ ] Importar CSV de teste com 3-5 participantes fictícios (você, familiar próximo)
-- [ ] QR Sheet gerada e QR de teste escaneado com o celular
+- [ ] Figurinhas (10×15) e QR verso (A4) gerados e um QR de teste escaneado com o celular
 - [ ] Scan abre a página de confirmação corretamente
 - [ ] "Sim, sou eu" cria o álbum e redireciona para `/album`
 - [ ] Escanear o QR de outro → aparece no álbum
@@ -357,7 +374,8 @@ Se ficar parada por mais de 1 minuto:
 | `http://192.168.0.109:8080/admin/dashboard` | Dashboard com ranking e status |
 | `http://192.168.0.109:8080/admin/participants` | Gerenciar participantes |
 | `http://192.168.0.109:8080/admin/bulk` | Importar CSV + fotos |
-| `http://192.168.0.109:8080/admin/qrsheet` | Gerar folha de QR codes |
+| `http://192.168.0.109:8080/admin/cards` | Figurinhas (frente) — papel fotográfico 10×15 |
+| `http://192.168.0.109:8080/admin/qrsheet` | QR do verso — A4 sulfite (sobre o ímã) |
 | `http://192.168.0.109:8080/admin/settings` | Configurações (base_url, kickoff) |
 | `http://192.168.0.109:8080/admin/backup` | Baixar backup SQLite |
 | `http://192.168.0.109:8080/admin/export` | Exportar resultado CSV |
