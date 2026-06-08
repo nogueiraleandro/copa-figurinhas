@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"copa/internal/app"
 	"copa/internal/db"
 	"copa/internal/handler"
 	"copa/internal/service"
@@ -88,58 +89,25 @@ func main() {
 		}
 	}()
 
-	// Router
-	mux := http.NewServeMux()
-
-	// Static files
-	staticFS, _ := fs.Sub(webSubFS, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
-
-	// Uploads (photos)
-	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadsDir))))
-
-	// Health check
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "ok")
-	})
-
-	// Home redirect (exact "/" only, so it doesn't act as a catch-all)
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/album", http.StatusSeeOther)
-	})
-
-	// Sticker / QR flow
-	stickerH := handler.NewStickerHandler(store, hub, tmpl, notifier)
-	confirmH := handler.NewConfirmHandler(store, hub, tmpl, notifier)
-	reclaimH := handler.NewReclaimHandler(store, hub, notifier)
-
-	mux.Handle("GET /s/{token}", stickerH)
-	mux.Handle("POST /s/{token}/confirm", confirmH)
-	mux.Handle("POST /s/{token}/reclaim", reclaimH)
-
-	// Album & reveal
-	albumH := handler.NewAlbumHandler(store, hub, tmpl)
-	revealH := handler.NewRevealHandler(tmpl)
-	mux.Handle("GET /album", albumH)
-	mux.Handle("GET /reveal", revealH)
-	mux.Handle("POST /logout", handler.NewLogoutHandler())
-
-	// SSE
-	sseH := handler.NewSSEHandler(hub, notifier)
-	mux.Handle("GET /sse", sseH)
-
-	// TV screen
-	tvH := handler.NewTVHandler(store, hub, tmpl)
-	mux.Handle("GET /tv", tvH)
-
-	// Admin
+	// Endereco de bind (COPA_ADDR permite trocar a porta, ex: ":8090")
 	addr := ":8080"
 	if v := strings.TrimSpace(os.Getenv("COPA_ADDR")); v != "" {
-		addr = v // permite trocar a porta (ex: ":8090") evitando conflito de bind
+		addr = v
 	}
-	adminH := handler.NewAdminHandler(store, hub, tmpl, uploadsDir, dataDir, addr, notifier)
-	mux.Handle("/admin", adminH)
-	mux.Handle("/admin/", adminH)
+
+	// Router (montado em internal/app para paridade com os testes)
+	staticFS, _ := fs.Sub(webSubFS, "static")
+	mux := app.NewRouter(app.Deps{
+		Store:      store,
+		Hub:        hub,
+		Notifier:   notifier,
+		Tmpl:       tmpl,
+		StaticFS:   staticFS,
+		UploadsDir: uploadsDir,
+		DataDir:    dataDir,
+		ListenAddr: addr,
+	})
+
 	log.Printf("Copa server starting on http://0.0.0.0%s", addr)
 	log.Printf("Admin panel: http://localhost%s/admin", addr)
 	log.Printf("TV screen:   http://localhost%s/tv", addr)
