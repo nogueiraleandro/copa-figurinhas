@@ -557,12 +557,19 @@ func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte
 // entao o casamento por substring e confiavel.
 func aiFailureReason(err error) string {
 	msg := err.Error()
+	low := strings.ToLower(msg)
 	switch {
 	case strings.Contains(msg, "status 401"), strings.Contains(msg, "status 403"):
 		return "Chave da IA invalida ou sem permissao. A foto original foi salva."
+	case strings.Contains(msg, "status 429") &&
+		(strings.Contains(low, "credit") || strings.Contains(low, "depleted") ||
+			strings.Contains(low, "billing") || strings.Contains(low, "prepay")):
+		// 429 por creditos esgotados: esperar nao resolve — precisa recarregar o billing.
+		return "Creditos da IA esgotados — recarregue o billing no Google AI Studio (ai.studio/projects). A foto original foi salva."
 	case strings.Contains(msg, "status 429"):
-		return "Cota da IA esgotada — tente mais tarde. A foto original foi salva."
-	case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"), strings.Contains(msg, "Timeout"):
+		// 429 por limite de taxa: esperar resolve.
+		return "Limite de uso da IA atingido — tente novamente em instantes. A foto original foi salva."
+	case strings.Contains(msg, "deadline exceeded"), strings.Contains(low, "timeout"):
 		return "A IA demorou demais (timeout). A foto original foi salva."
 	default:
 		return "A IA nao conseguiu gerar a figurinha. A foto original foi salva."

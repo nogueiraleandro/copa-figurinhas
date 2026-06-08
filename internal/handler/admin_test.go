@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -802,5 +803,29 @@ func TestRankLANIPs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("rankLANIPs ordem errada: got %v, want %v", got, want)
 		}
+	}
+}
+
+func TestAIFailureReason(t *testing.T) {
+	cases := []struct {
+		name string
+		err  string
+		want string // substring esperada na mensagem
+	}{
+		{"chave invalida 401", "gemini status 401: invalid api key", "Chave da IA invalida"},
+		{"sem permissao 403", "gemini status 403: forbidden", "Chave da IA invalida"},
+		{"creditos esgotados", `gemini status 429: {"error":{"message":"Your prepayment credits are depleted","status":"RESOURCE_EXHAUSTED"}}`, "Creditos da IA esgotados"},
+		{"rate limit 429", "gemini status 429: quota exceeded for requests per minute", "Limite de uso da IA"},
+		{"timeout deadline", "context deadline exceeded", "timeout"},
+		{"timeout client", "Post ...: net/http: request canceled (Client.Timeout exceeded)", "timeout"},
+		{"sem imagem", "gemini nao retornou imagem", "nao conseguiu gerar"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := aiFailureReason(errors.New(c.err))
+			if !strings.Contains(got, c.want) {
+				t.Fatalf("aiFailureReason(%q) = %q; queria conter %q", c.err, got, c.want)
+			}
+		})
 	}
 }
