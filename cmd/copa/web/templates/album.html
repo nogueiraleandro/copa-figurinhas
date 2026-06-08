@@ -48,7 +48,7 @@
          {{if .Collected}}data-name="{{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}" data-photo="{{$p.PhotoPath}}" {{if not $p.PhotoPath}}data-initial="{{initial $p.Name}}"{{end}} role="button" tabindex="0" aria-label="Abrir figurinha de {{if $p.Nickname}}{{$p.Nickname}}{{else}}{{$p.Name}}{{end}}"{{end}}>
       {{if .Collected}}
         {{if $p.PhotoPath}}
-        <img src="{{$p.PhotoPath}}" alt="{{$p.Name}}" class="sticker-photo">
+        <img src="{{$p.PhotoPath}}" alt="{{$p.Name}}" class="sticker-photo" loading="lazy">
         {{else}}
         <div class="sticker-initials">{{initial $p.Name}}</div>
         {{end}}

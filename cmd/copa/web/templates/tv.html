@@ -60,7 +60,7 @@
       <div class="rank-row {{if $e.Complete}}complete{{end}}" data-id="{{$e.ParticipantID}}">
         <div class="rank-pos">{{add $i 1}}º</div>
         {{if $e.PhotoPath}}
-        <img src="{{$e.PhotoPath}}" alt="{{$e.Name}}" class="rank-avatar">
+        <img src="{{$e.PhotoPath}}" alt="{{$e.Name}}" class="rank-avatar" loading="lazy">
         {{else}}
         <div class="rank-avatar-placeholder">{{initial $e.Name}}</div>
         {{end}}
@@ -184,7 +184,7 @@ function renderRanking(ranking) {
     const display = e.Nickname || e.Name;
     const initial = (e.Name || '?')[0].toUpperCase();
     const avatar = e.PhotoPath
-      ? `<img src="${e.PhotoPath}" alt="${e.Name}" class="rank-avatar">`
+      ? `<img src="${e.PhotoPath}" alt="${e.Name}" class="rank-avatar" loading="lazy">`
       : `<div class="rank-avatar-placeholder">${initial}</div>`;
     return `<div class="rank-row${e.Complete ? ' complete' : ''}" data-id="${e.ParticipantID}">
       <div class="rank-pos">${i+1}º</div>
