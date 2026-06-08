@@ -558,15 +558,12 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	created, err := h.store.CreateParticipantWithDetails(p)
-	if err != nil {
+	if _, err := h.store.CreateParticipantWithDetails(p); err != nil {
 		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarnMsg))
 		return
 	}
-	created.Team, created.InfoDate, created.Height, created.Weight, created.Phrase = p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase
-	if err := h.store.UpdateParticipant(created); err != nil {
-		log.Printf("falha ao salvar campos extras do participante: %v", err)
-	}
+	// CreateParticipantWithDetails ja persiste team/info_date/height/weight/phrase
+	// no INSERT, entao nao e preciso um UPDATE extra aqui.
 
 	h.broadcastRanking()
 	redirectWithAIWarn(w, r, "/admin/participants", aiWarnMsg)
