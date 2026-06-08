@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -133,6 +134,9 @@ func main() {
 
 	// Admin
 	addr := ":8080"
+	if v := strings.TrimSpace(os.Getenv("COPA_ADDR")); v != "" {
+		addr = v // permite trocar a porta (ex: ":8090") evitando conflito de bind
+	}
 	adminH := handler.NewAdminHandler(store, hub, tmpl, uploadsDir, dataDir, addr, notifier)
 	mux.Handle("/admin", adminH)
 	mux.Handle("/admin/", adminH)
