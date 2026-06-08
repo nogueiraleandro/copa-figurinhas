@@ -383,6 +383,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 	faixa := strings.TrimSpace(r.FormValue("faixa"))
 	genero := strings.TrimSpace(r.FormValue("genero"))
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
+	aiModel := strings.TrimSpace(r.FormValue("ai_model"))
 
 	photoPath := ""
 	aiWarnMsg := ""
@@ -396,7 +397,7 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 					photoMime = http.DetectContentType(data)
 				}
 				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); reason == "" {
+				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -448,6 +449,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 	faixa := strings.TrimSpace(r.FormValue("faixa"))
 	genero := strings.TrimSpace(r.FormValue("genero"))
 	enquadramento := strings.TrimSpace(r.FormValue("enquadramento"))
+	aiModel := strings.TrimSpace(r.FormValue("ai_model"))
 
 	aiWarnMsg := ""
 	if file, header, ferr := r.FormFile("photo"); ferr == nil {
@@ -460,7 +462,7 @@ func (h *AdminHandler) handleEditParticipant(w http.ResponseWriter, r *http.Requ
 					photoMime = http.DetectContentType(data)
 				}
 				photo2, photo2Mime := readFormImage(r, "photo2")
-				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento); reason == "" {
+				if styled, styledMime, reason := h.styleWithAI(data, photoMime, photo2, photo2Mime, p, faixa, genero, enquadramento, aiModel); reason == "" {
 					data = styled
 					filename = "gemini" + extForMime(styledMime)
 				} else {
@@ -524,12 +526,16 @@ func (h *AdminHandler) aiConfigured() bool {
 // styleWithAI tenta estilizar a foto com a IA. Em caso de sucesso retorna a
 // imagem e o mime, e reason == "". Em caso de falha retorna reason com uma
 // mensagem curta e amigavel explicando o motivo (para mostrar ao operador).
-func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte, photo2Mime string, p *model.Participant, faixa, genero, enquadramento string) (out []byte, outMime string, reason string) {
+func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte, photo2Mime string, p *model.Participant, faixa, genero, enquadramento, modelOverride string) (out []byte, outMime string, reason string) {
 	setting, err := h.store.GetSetting()
 	if err != nil || strings.TrimSpace(setting.GeminiAPIKey) == "" {
 		return nil, "", "A IA nao esta configurada. A foto original foi salva."
 	}
-	model := strings.TrimSpace(setting.AIModel)
+	// Modelo escolhido por figurinha (formulario) tem prioridade sobre o global.
+	model := strings.TrimSpace(modelOverride)
+	if model == "" {
+		model = strings.TrimSpace(setting.AIModel)
+	}
 	model = normalizeAIModel(model)
 	prompt := strings.TrimSpace(setting.AIPrompt)
 	if prompt == "" {
@@ -544,9 +550,10 @@ func (h *AdminHandler) styleWithAI(photo []byte, photoMime string, photo2 []byte
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 190*time.Second)
 	defer cancel()
+	log.Printf("gemini: gerando figurinha com model=%s", model)
 	out, outMime, err = client.StyleImage(ctx, photo, photoMime, photo2, photo2Mime, ref, refMime, prompt)
 	if err != nil {
-		log.Printf("gemini image generation failed: %v", err)
+		log.Printf("gemini image generation failed (model=%s): %v", model, err)
 		return nil, "", aiFailureReason(err)
 	}
 	return out, outMime, ""

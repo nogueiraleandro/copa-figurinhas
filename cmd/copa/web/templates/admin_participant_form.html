@@ -99,8 +99,13 @@
             <option value="peitoral">Peitoral</option>
             <option value="corpo">Corpo inteiro</option>
           </select>
+          <select name="ai_model" class="form-input" style="flex:1;min-width:160px">
+            <option value="gemini-3.1-flash-image-preview" selected>3.1 flash (barato)</option>
+            <option value="gemini-3-pro-image-preview">3 pro (caro, +qualidade)</option>
+            <option value="gemini-2.5-flash-image">2.5 flash</option>
+          </select>
         </div>
-        <span class="hint">Ajustes rápidos aplicados ao prompt só nesta geração.</span>
+        <span class="hint">Ajustes rápidos aplicados ao prompt só nesta geração. O 3.1 flash é o mais barato; o 3 pro tem mais qualidade e custa ~3x mais.</span>
         {{else}}
         <span class="hint">Para gerar figurinhas com IA, configure a chave do Gemini em <a href="/admin/settings">Config</a>.</span>
         {{end}}
