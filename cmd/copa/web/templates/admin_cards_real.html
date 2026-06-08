@@ -3,21 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Figurinhas (10x15) - Copa Figurinhas</title>
+<title>Figurinhas tamanho real (4 por 10x15) - Copa Figurinhas</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
-/* Cada folha = papel fotográfico 10x15 em paisagem (150x100mm).
-   Duas figurinhas de 75x100mm lado a lado — recortar no meio (linha central). */
+/* Cada folha = papel fotográfico 10x15 em retrato (100x150mm).
+   Quatro figurinhas retrato num grid 2x2, tamanho real (≈ Panini).
+   Borda branca de segurança (padding) embutida: se a impressora cortar
+   alguns mm nas bordas, corta só o branco — a foto não é cortada.
+   Recortar nas linhas (gap) entre as figurinhas. */
 .sheet {
-  width: 150mm; height: 100mm;
-  display: flex; gap: 0;
+  width: 100mm; height: 150mm;
   box-sizing: border-box;
+  padding: 5mm;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3mm;
   margin: 0 auto 8mm;
   background: #fff;
   box-shadow: 0 0 0 1px #eee; /* só na tela, p/ enxergar a folha */
 }
 .fig {
-  width: 75mm; height: 100mm;
   box-sizing: border-box;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden; background: #fff;
@@ -30,11 +36,11 @@
 .fig-placeholder {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 40mm; font-weight: 700; color: #b8860b; background: #fff7d6;
+  font-size: 24mm; font-weight: 700; color: #b8860b; background: #fff7d6;
 }
 
 @media print {
-  @page { size: 150mm 100mm; margin: 0; }
+  @page { size: 100mm 150mm; margin: 0; }
   .admin-nav, .no-print { display: none !important; }
   body { background: #fff; }
   .admin-content { padding: 0; margin: 0; }
@@ -47,7 +53,6 @@
   <a href="/admin/dashboard" class="nav-brand">⚽ Copa Admin</a>
   <div class="nav-links">
     <a href="/admin/participants">Participantes</a>
-    <a href="/admin/production">Produção</a>
     <a href="/admin/bulk">Importar</a>
     <a href="/admin/qrsheet">QR verso</a>
     <a href="/admin/cards" class="active">Figurinhas</a>
@@ -58,31 +63,32 @@
 </nav>
 <div class="admin-content">
   <div class="section-header no-print">
-    <h1>Figurinhas (frente) — papel fotográfico 10×15</h1>
+    <h1>Figurinhas tamanho real — 4 por folha 10×15</h1>
     <div>
-      <a href="/admin/cards-real" class="btn">Tamanho real (4/folha)</a>
+      <a href="/admin/cards" class="btn">2 por folha (grande)</a>
       <button onclick="window.print()" class="btn btn-primary">🖨️ Imprimir</button>
     </div>
   </div>
   <p class="hint no-print">
-    Duas figurinhas por folha 10×15 ({{.Total}} no total).
-    Na impressão escolha o papel <strong>10×15</strong>, orientação <strong>paisagem</strong>,
-    <strong>sem margem</strong> (borderless) e escala <strong>100%</strong>.
-    Depois é só <strong>recortar no meio</strong> (cada metade = 7,5×10cm) e usar a figurinha no tamanho original.
+    Quatro figurinhas por folha 10×15 ({{.Total}} no total), em tamanho real (≈5×7,5cm cada).
+    Na impressão escolha o papel <strong>10×15</strong>, orientação <strong>retrato</strong> e escala <strong>100%</strong>.
+    A <strong>margem branca de segurança</strong> já está embutida (não precisa borderless);
+    depois é só <strong>recortar nas linhas</strong> entre as figurinhas.
   </p>
 
   {{range .Sheets}}
   <div class="sheet">
     {{range .}}
     <div class="fig">
-      {{if .StickerPath}}
-      <img src="{{.StickerPath}}" alt="{{.Name}}" class="fig-img">
-      {{else}}
-      <div class="fig-placeholder">{{slice .Name 0 1}}</div>
+      {{if .}}
+        {{if .PhotoPath}}
+        <img src="{{.PhotoPath}}" alt="{{.Name}}" class="fig-img">
+        {{else}}
+        <div class="fig-placeholder">{{initial .Name}}</div>
+        {{end}}
       {{end}}
     </div>
     {{end}}
-    {{if eq (len .) 1}}<div class="fig"></div>{{end}}
   </div>
   {{else}}
   <p class="hint">Nenhum participante ativo cadastrado.</p>

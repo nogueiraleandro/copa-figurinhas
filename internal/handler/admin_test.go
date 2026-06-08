@@ -735,6 +735,28 @@ func TestAdminCardsRenders(t *testing.T) {
 	_ = p
 }
 
+func TestAdminCardsRealRenders(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	p, _ := store.CreateParticipant("Carla", "", "")
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	resp, err := client.Get(srv.URL + "/admin/cards-real")
+	if err != nil {
+		t.Fatalf("cards-real: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("cards-real esperava 200, got %d", resp.StatusCode)
+	}
+	// Tamanho real: 4 figurinhas por folha (grid 2x2). Valida ao menos uma folha.
+	if !strings.Contains(string(body), `class="sheet"`) {
+		t.Fatalf("figurinhas tamanho real deveriam renderizar ao menos uma folha (.sheet)")
+	}
+	_ = p
+}
+
 // PNG 1x1 valido para upload de teste.
 func onePixelPNG() []byte {
 	return []byte{

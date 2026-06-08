@@ -137,6 +137,8 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleTransfer(w, r)
 	case path == "/admin/cards":
 		h.handleCards(w, r)
+	case path == "/admin/cards-real":
+		h.handleCardsReal(w, r)
 	case path == "/admin/sistema":
 		h.handleSystem(w, r)
 	case path == "/admin/sistema/reset":
@@ -1398,6 +1400,30 @@ func (h *AdminHandler) handleCards(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.tmpl.Render(w, "admin_cards.html", map[string]interface{}{
+		"Sheets": sheets,
+		"Total":  len(participants),
+	})
+}
+
+// handleCardsReal renderiza as figurinhas em tamanho real (≈ Panini): quatro
+// figurinhas retrato num grid 2x2 por folha 10x15 (retrato, 100x150mm), com uma
+// borda branca de segurança embutida para a impressora não cortar a foto.
+// Cada folha tem sempre 4 células — as sobras vêm como nil (célula vazia).
+func (h *AdminHandler) handleCardsReal(w http.ResponseWriter, r *http.Request) {
+	participants, _ := h.store.ListActiveParticipants()
+
+	// Agrupa de 4 em 4; cada folha sempre com 4 células (nil = vazia).
+	const perSheet = 4
+	var sheets [][]*model.Participant
+	for i := 0; i < len(participants); i += perSheet {
+		sheet := make([]*model.Participant, perSheet)
+		for j := 0; j < perSheet && i+j < len(participants); j++ {
+			sheet[j] = participants[i+j]
+		}
+		sheets = append(sheets, sheet)
+	}
+
+	h.tmpl.Render(w, "admin_cards_real.html", map[string]interface{}{
 		"Sheets": sheets,
 		"Total":  len(participants),
 	})
