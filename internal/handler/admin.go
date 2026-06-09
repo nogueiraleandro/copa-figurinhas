@@ -1207,67 +1207,11 @@ func (h *AdminHandler) handleBackup(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) handleFullBackup(w http.ResponseWriter, r *http.Request) {
 	stamp := time.Now().Format("20060102-150405")
-	tmpDB := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-db-%d.db", time.Now().UnixNano()))
-	tmpZip := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-%d.zip", time.Now().UnixNano()))
-	defer os.Remove(tmpDB)
+	tmpZip := filepath.Join(h.dataDir, fmt.Sprintf("copa-download-full-%d.zip", time.Now().UnixNano()))
 	defer os.Remove(tmpZip)
 
-	if err := h.store.BackupTo(tmpDB); err != nil {
+	if err := WriteFullBackup(h.store, h.uploadsDir, tmpZip); err != nil {
 		http.Error(w, "Erro ao gerar backup: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	zf, err := os.Create(tmpZip)
-	if err != nil {
-		http.Error(w, "Erro ao criar zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	zw := zip.NewWriter(zf)
-
-	if err := addFileToZip(zw, tmpDB, "data/copa.db"); err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao incluir banco no zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := filepath.WalkDir(h.uploadsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(h.uploadsDir, path)
-		if err != nil {
-			return err
-		}
-		return addFileToZip(zw, path, filepath.ToSlash(filepath.Join("uploads", rel)))
-	}); err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao incluir fotos no zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	setting, _ := h.store.GetSetting()
-	total, _ := h.store.CountActiveParticipants()
-	manifest, err := zw.Create("manifest.txt")
-	if err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao criar manifesto: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	fmt.Fprintf(manifest, "Copa de Figurinhas backup completo\n")
-	fmt.Fprintf(manifest, "created_at=%s\n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(manifest, "base_url=%s\n", setting.BaseURL)
-	fmt.Fprintf(manifest, "active_participants=%d\n", total)
-	fmt.Fprintf(manifest, "includes=data/copa.db, uploads/\n")
-
-	if err := zw.Close(); err != nil {
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao fechar zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := zf.Close(); err != nil {
-		http.Error(w, "Erro ao salvar zip: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1283,6 +1227,73 @@ func (h *AdminHandler) handleFullBackup(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="copa-backup-completo-%s.zip"`, stamp))
 	io.Copy(w, f) //nolint:errcheck
+}
+
+// WriteFullBackup grava um backup COMPLETO em dstZip: um snapshot consistente do
+// banco (em data/copa.db), TODAS as fotos de uploads/ e um manifest.txt. É usado
+// tanto no download manual quanto nos backups automáticos, para que as fotos
+// (figurinhas geradas pela IA, insubstituíveis) nunca fiquem de fora da rede de
+// segurança. Em caso de erro, remove o zip parcial.
+func WriteFullBackup(store *service.Store, uploadsDir, dstZip string) error {
+	tmpDB := dstZip + ".dbtmp"
+	defer os.Remove(tmpDB)
+	if err := store.BackupTo(tmpDB); err != nil {
+		return fmt.Errorf("snapshot do banco: %w", err)
+	}
+
+	zf, err := os.Create(dstZip)
+	if err != nil {
+		return err
+	}
+	// fail fecha tudo e descarta o zip parcial, para nunca deixar um backup truncado.
+	fail := func(err error) error {
+		zf.Close()        //nolint:errcheck
+		os.Remove(dstZip) //nolint:errcheck
+		return err
+	}
+	zw := zip.NewWriter(zf)
+
+	if err := addFileToZip(zw, tmpDB, "data/copa.db"); err != nil {
+		zw.Close() //nolint:errcheck
+		return fail(fmt.Errorf("incluir banco no zip: %w", err))
+	}
+	if uploadsDir != "" {
+		if err := filepath.WalkDir(uploadsDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(uploadsDir, path)
+			if err != nil {
+				return err
+			}
+			return addFileToZip(zw, path, filepath.ToSlash(filepath.Join("uploads", rel)))
+		}); err != nil {
+			zw.Close() //nolint:errcheck
+			return fail(fmt.Errorf("incluir fotos no zip: %w", err))
+		}
+	}
+
+	setting, _ := store.GetSetting()
+	total, _ := store.CountActiveParticipants()
+	manifest, err := zw.Create("manifest.txt")
+	if err != nil {
+		zw.Close() //nolint:errcheck
+		return fail(fmt.Errorf("criar manifesto: %w", err))
+	}
+	fmt.Fprintf(manifest, "Copa de Figurinhas backup completo\n")
+	fmt.Fprintf(manifest, "created_at=%s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(manifest, "base_url=%s\n", setting.BaseURL)
+	fmt.Fprintf(manifest, "active_participants=%d\n", total)
+	fmt.Fprintf(manifest, "includes=data/copa.db, uploads/\n")
+
+	if err := zw.Close(); err != nil {
+		return fail(fmt.Errorf("fechar zip: %w", err))
+	}
+	if err := zf.Close(); err != nil {
+		os.Remove(dstZip) //nolint:errcheck
+		return fmt.Errorf("salvar zip: %w", err)
+	}
+	return nil
 }
 
 func addFileToZip(zw *zip.Writer, srcPath, dstName string) error {
@@ -1520,7 +1531,7 @@ func latestBackupInfo(dataDir string) (string, *time.Time) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasPrefix(name, "copa-backup-") || !strings.HasSuffix(name, ".db") {
+		if !strings.HasPrefix(name, "copa-backup-") || !(strings.HasSuffix(name, ".db") || strings.HasSuffix(name, ".zip")) {
 			continue
 		}
 		info, err := e.Info()

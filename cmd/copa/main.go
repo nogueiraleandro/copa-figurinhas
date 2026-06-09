@@ -86,7 +86,7 @@ func main() {
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			backupDB(store, dataDir)
+			backupFull(store, dataDir, uploadsDir)
 		}
 	}()
 
@@ -146,13 +146,16 @@ func main() {
 	if err := store.Checkpoint(); err != nil {
 		log.Printf("checkpoint warning: %v", err)
 	}
-	backupDB(store, dataDir) // backup final
+	backupFull(store, dataDir, uploadsDir) // backup final
 	log.Print("encerrado com seguranca.")
 }
 
-func backupDB(store *service.Store, dataDir string) {
-	dst := filepath.Join(dataDir, fmt.Sprintf("copa-backup-%s.db", time.Now().Format("20060102-150405")))
-	if err := store.BackupTo(dst); err != nil {
+// backupFull grava um backup COMPLETO (banco + fotos) como copa-backup-*.zip.
+// Inclui uploads/ para que as figurinhas geradas pela IA — insubstituíveis —
+// estejam na rede de segurança automática, não só o banco.
+func backupFull(store *service.Store, dataDir, uploadsDir string) {
+	dst := filepath.Join(dataDir, fmt.Sprintf("copa-backup-%s.zip", time.Now().Format("20060102-150405")))
+	if err := handler.WriteFullBackup(store, uploadsDir, dst); err != nil {
 		log.Printf("backup error: %v", err)
 		return
 	}
@@ -194,7 +197,9 @@ func cleanOldBackups(dataDir string) {
 }
 
 // matchesBackupName identifica os arquivos de backup periodico/final
-// (copa-backup-AAAAMMDD-HHMMSS.db), excluindo os temporarios de download/restore.
+// (copa-backup-AAAAMMDD-HHMMSS.zip, ou .db de versoes antigas), excluindo os
+// temporarios de download/restore (copa-download-*, copa-restore-*).
 func matchesBackupName(name string) bool {
-	return strings.HasPrefix(name, "copa-backup-") && strings.HasSuffix(name, ".db")
+	return strings.HasPrefix(name, "copa-backup-") &&
+		(strings.HasSuffix(name, ".zip") || strings.HasSuffix(name, ".db"))
 }

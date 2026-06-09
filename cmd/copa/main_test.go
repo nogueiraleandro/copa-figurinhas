@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"copa/internal/db"
@@ -63,9 +65,14 @@ func TestCleanOldBackupsKeepsLastFive(t *testing.T) {
 	}
 }
 
-// backupDB gera um arquivo de backup a partir de um store real.
-func TestBackupDBCreatesFile(t *testing.T) {
+// backupFull gera um backup COMPLETO (banco + fotos) como copa-backup-*.zip.
+func TestBackupFullCreatesZip(t *testing.T) {
 	dir := t.TempDir()
+	uploads := t.TempDir()
+	// Uma foto qualquer em uploads/ para garantir que ela entra no zip.
+	if err := os.WriteFile(filepath.Join(uploads, "foto1.jpg"), []byte("jpeg"), 0644); err != nil {
+		t.Fatalf("write foto: %v", err)
+	}
 	database, err := db.Open(dir)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -73,17 +80,34 @@ func TestBackupDBCreatesFile(t *testing.T) {
 	defer database.Close()
 	store := service.NewStore(database)
 
-	backupDB(store, dir)
+	backupFull(store, dir, uploads)
 
 	entries, _ := os.ReadDir(dir)
-	var found bool
+	var zipPath string
 	for _, e := range entries {
-		if matchesBackupName(e.Name()) {
-			found = true
+		if matchesBackupName(e.Name()) && strings.HasSuffix(e.Name(), ".zip") {
+			zipPath = filepath.Join(dir, e.Name())
 		}
 	}
-	if !found {
-		t.Fatalf("backupDB deveria criar um arquivo copa-backup-*.db em %s", dir)
+	if zipPath == "" {
+		t.Fatalf("backupFull deveria criar um copa-backup-*.zip em %s", dir)
+	}
+
+	// O zip deve conter o banco e a foto.
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("abrir zip: %v", err)
+	}
+	defer zr.Close()
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["data/copa.db"] {
+		t.Errorf("zip deveria conter data/copa.db; tem %v", names)
+	}
+	if !names["uploads/foto1.jpg"] {
+		t.Errorf("zip deveria conter as fotos de uploads/; tem %v", names)
 	}
 }
 
