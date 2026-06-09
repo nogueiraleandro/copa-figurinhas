@@ -87,18 +87,19 @@
   <div class="card form-card" style="margin-top:1.5rem">
     <h2>♻️ Restaurar backup</h2>
     <p class="hint">
-      Substitui <strong>todos</strong> os dados atuais pelos do arquivo de backup (.db) gerado
-      em <a href="/admin/backup">Baixar backup</a>. Não precisa reiniciar o servidor.
+      Substitui <strong>todos</strong> os dados atuais pelos do arquivo de backup. Aceita o
+      <strong>backup completo (.zip)</strong> — que restaura banco <em>e</em> fotos — ou o
+      <strong>backup só do banco (.db)</strong>. Não precisa reiniciar o servidor.
     </p>
     <p class="alert alert-warning">
-      ⚠️ As <strong>fotos</strong> ficam na pasta <code>uploads/</code> e não vêm no backup —
-      se o backup for de outro computador, as fotos precisam já estar presentes. A
-      <strong>senha de admin</strong> passa a ser a do backup.
+      ⚠️ Com o <strong>.zip</strong> as fotos em <code>uploads/</code> são repostas (sobrescrevendo
+      as atuais). Com o <strong>.db</strong>, só o banco é restaurado — as fotos precisam já estar
+      presentes na pasta. Em ambos, a <strong>senha de admin</strong> passa a ser a do backup.
     </p>
     <form method="POST" action="/admin/sistema/restore" enctype="multipart/form-data"
           onsubmit="return confirm('Restaurar este backup? Os dados atuais serão substituídos.');">
       <div class="form-group">
-        <input type="file" name="backup" accept=".db" class="form-input" required>
+        <input type="file" name="backup" accept=".db,.zip" class="form-input" required>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Restaurar backup</button>

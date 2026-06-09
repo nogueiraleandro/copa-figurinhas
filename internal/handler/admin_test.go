@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -708,6 +709,93 @@ func TestAdminRestoreInvalidFile(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "restaurar") {
 		t.Fatalf("arquivo inválido deveria mostrar erro amigável, status=%d", resp.StatusCode)
+	}
+}
+
+// Restaurar pelo backup COMPLETO (.zip) repoe o banco (detecta o zip pelo upload).
+func TestAdminRestoreFullZipRoundTrip(t *testing.T) {
+	srv, store := newAdminTestServer(t)
+	client := adminClient(t)
+	loginAdmin(t, srv, client, "senha")
+
+	store.CreateParticipant("DoZip", "", "") //nolint:errcheck
+	resp, err := client.Get(srv.URL + "/admin/backup/full")
+	if err != nil {
+		t.Fatalf("full backup: %v", err)
+	}
+	zipBytes, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	store.ResetGameData() //nolint:errcheck
+	if n, _ := store.CountActiveParticipants(); n != 0 {
+		t.Fatalf("deveria estar vazio antes do restore, got %d", n)
+	}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("backup", "copa-backup-completo.zip")
+	part.Write(zipBytes)
+	mw.Close()
+
+	req, _ := http.NewRequest("POST", srv.URL+"/admin/sistema/restore", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("restore zip: %v", err)
+	}
+	resp.Body.Close()
+
+	people, _ := store.ListParticipants()
+	if len(people) != 1 || people[0].Name != "DoZip" {
+		t.Fatalf("restore do zip deveria repor o participante, got %d", len(people))
+	}
+}
+
+// restoreFullZip repoe banco E fotos; caminhos de zip-slip sao ignorados.
+func TestRestoreFullZipRestoresPhotos(t *testing.T) {
+	database, err := idb.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	store := service.NewStore(database)
+	tmpl, err := NewTemplates(os.DirFS("../../cmd/copa/web"))
+	if err != nil {
+		t.Fatalf("templates: %v", err)
+	}
+	hub := sse.NewHub()
+	uploads := t.TempDir()
+	data := t.TempDir()
+	h := NewAdminHandler(store, hub, tmpl, uploads, data, ":8080", NewNotifier(store, hub))
+
+	store.CreateParticipant("ComFoto", "", "/uploads/foto.jpg") //nolint:errcheck
+	if err := os.WriteFile(filepath.Join(uploads, "foto.jpg"), []byte("conteudo-original"), 0644); err != nil {
+		t.Fatalf("write foto: %v", err)
+	}
+
+	zipPath := filepath.Join(data, "bkp.zip")
+	if err := WriteFullBackup(store, uploads, zipPath); err != nil {
+		t.Fatalf("WriteFullBackup: %v", err)
+	}
+
+	// Apaga banco + foto, simulando perda total.
+	store.ResetGameData()                         //nolint:errcheck
+	os.Remove(filepath.Join(uploads, "foto.jpg")) //nolint:errcheck
+
+	if err := h.restoreFullZip(zipPath); err != nil {
+		t.Fatalf("restoreFullZip: %v", err)
+	}
+
+	people, _ := store.ListParticipants()
+	if len(people) != 1 || people[0].Name != "ComFoto" {
+		t.Fatalf("banco deveria ter sido restaurado, got %d", len(people))
+	}
+	got, err := os.ReadFile(filepath.Join(uploads, "foto.jpg"))
+	if err != nil {
+		t.Fatalf("foto deveria ter sido restaurada: %v", err)
+	}
+	if string(got) != "conteudo-original" {
+		t.Fatalf("conteudo da foto restaurada divergente: %q", got)
 	}
 }
 

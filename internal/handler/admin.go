@@ -1634,14 +1634,14 @@ func (h *AdminHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		h.handleSystemWithError(w, r, "Erro ao ler upload: "+err.Error())
 		return
 	}
-	file, _, ferr := r.FormFile("backup")
+	file, header, ferr := r.FormFile("backup")
 	if ferr != nil {
-		h.handleSystemWithError(w, r, "Selecione um arquivo de backup (.db).")
+		h.handleSystemWithError(w, r, "Selecione um arquivo de backup (.db ou .zip).")
 		return
 	}
 	defer file.Close()
 
-	tmp := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-%d.db", time.Now().UnixNano()))
+	tmp := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-%d.tmp", time.Now().UnixNano()))
 	dst, err := os.Create(tmp)
 	if err != nil {
 		h.handleSystemWithError(w, r, "Erro ao salvar upload: "+err.Error())
@@ -1655,13 +1655,101 @@ func (h *AdminHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RestoreFrom(tmp); err != nil {
+	// Backup completo (.zip): restaura banco E fotos. Backup simples (.db): so o banco.
+	if strings.HasSuffix(strings.ToLower(header.Filename), ".zip") || isZipFile(tmp) {
+		if err := h.restoreFullZip(tmp); err != nil {
+			h.handleSystemWithError(w, r, "Erro ao restaurar: "+err.Error())
+			return
+		}
+	} else if err := h.store.RestoreFrom(tmp); err != nil {
 		h.handleSystemWithError(w, r, "Erro ao restaurar: "+err.Error())
 		return
 	}
 
 	h.broadcastRanking()
 	http.Redirect(w, r, "/admin/sistema?restored=1", http.StatusSeeOther)
+}
+
+// restoreFullZip restaura um backup completo (gerado por WriteFullBackup):
+// substitui o banco pelo data/copa.db de dentro do zip e repõe as fotos de
+// uploads/ (sobrescrevendo as atuais). Caminhos suspeitos (zip-slip) são ignorados.
+func (h *AdminHandler) restoreFullZip(zipPath string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("abrir zip: %w", err)
+	}
+	defer zr.Close()
+
+	// 1) Banco: obrigatorio.
+	var dbFile *zip.File
+	for _, f := range zr.File {
+		if f.Name == "data/copa.db" {
+			dbFile = f
+			break
+		}
+	}
+	if dbFile == nil {
+		return fmt.Errorf("o zip não contém data/copa.db (não parece um backup completo do Copa)")
+	}
+	tmpDB := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-db-%d.db", time.Now().UnixNano()))
+	defer os.Remove(tmpDB)
+	if err := extractZipFile(dbFile, tmpDB); err != nil {
+		return fmt.Errorf("extrair banco: %w", err)
+	}
+	if err := h.store.RestoreFrom(tmpDB); err != nil {
+		return err
+	}
+
+	// 2) Fotos: repoe uploads/ (sobrescreve as atuais).
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() || !strings.HasPrefix(f.Name, "uploads/") {
+			continue
+		}
+		rel := strings.TrimPrefix(f.Name, "uploads/")
+		clean := filepath.Clean(rel)
+		if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+			continue // zip-slip: ignora caminhos para fora de uploads/
+		}
+		target := filepath.Join(h.uploadsDir, clean)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("criar pasta de fotos: %w", err)
+		}
+		if err := extractZipFile(f, target); err != nil {
+			return fmt.Errorf("extrair foto %s: %w", f.Name, err)
+		}
+	}
+	return nil
+}
+
+// isZipFile detecta um zip pela assinatura "PK\x03\x04" (caso o nome do upload
+// nao tenha a extensao .zip).
+func isZipFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var sig [4]byte
+	if _, err := io.ReadFull(f, sig[:]); err != nil {
+		return false
+	}
+	return sig[0] == 'P' && sig[1] == 'K' && sig[2] == 0x03 && sig[3] == 0x04
+}
+
+// extractZipFile grava o conteudo de uma entrada do zip em dst.
+func extractZipFile(f *zip.File, dst string) error {
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, rc) //nolint:gosec // backup do proprio operador, em maquina local
+	return err
 }
 
 // handleSystemWithError re-renderiza a página de sistema com uma mensagem de erro.
