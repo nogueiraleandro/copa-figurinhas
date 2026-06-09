@@ -137,6 +137,8 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleTransfer(w, r)
 	case path == "/admin/cards":
 		h.handleCards(w, r)
+	case path == "/admin/cards-real":
+		h.handleCardsReal(w, r)
 	case path == "/admin/sistema":
 		h.handleSystem(w, r)
 	case path == "/admin/sistema/reset":
@@ -161,7 +163,12 @@ func (h *AdminHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if setting.AdminPasswordHash == "" {
-		// First login: set password
+		// First login: set password. Recusa senha vazia para nao criar
+		// silenciosamente um admin sem senha por um submit em branco.
+		if strings.TrimSpace(password) == "" {
+			h.tmpl.Render(w, "admin_login.html", map[string]interface{}{"Error": "Defina uma senha não vazia."})
+			return
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			http.Error(w, "hash error", http.StatusInternalServerError)
@@ -558,15 +565,12 @@ func (h *AdminHandler) handleNewParticipant(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	created, err := h.store.CreateParticipantWithDetails(p)
-	if err != nil {
+	if _, err := h.store.CreateParticipantWithDetails(p); err != nil {
 		h.tmpl.Render(w, "admin_participant_form.html", h.participantFormData(true, nil, "Erro ao criar: "+err.Error(), aiWarnMsg))
 		return
 	}
-	created.Team, created.InfoDate, created.Height, created.Weight, created.Phrase = p.Team, p.InfoDate, p.Height, p.Weight, p.Phrase
-	if err := h.store.UpdateParticipant(created); err != nil {
-		log.Printf("falha ao salvar campos extras do participante: %v", err)
-	}
+	// CreateParticipantWithDetails ja persiste team/info_date/height/weight/phrase
+	// no INSERT, entao nao e preciso um UPDATE extra aqui.
 
 	h.broadcastRanking()
 	redirectWithAIWarn(w, r, "/admin/participants", aiWarnMsg)
@@ -1203,67 +1207,11 @@ func (h *AdminHandler) handleBackup(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) handleFullBackup(w http.ResponseWriter, r *http.Request) {
 	stamp := time.Now().Format("20060102-150405")
-	tmpDB := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-db-%d.db", time.Now().UnixNano()))
-	tmpZip := filepath.Join(h.dataDir, fmt.Sprintf("copa-full-%d.zip", time.Now().UnixNano()))
-	defer os.Remove(tmpDB)
+	tmpZip := filepath.Join(h.dataDir, fmt.Sprintf("copa-download-full-%d.zip", time.Now().UnixNano()))
 	defer os.Remove(tmpZip)
 
-	if err := h.store.BackupTo(tmpDB); err != nil {
+	if err := WriteFullBackup(h.store, h.uploadsDir, tmpZip); err != nil {
 		http.Error(w, "Erro ao gerar backup: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	zf, err := os.Create(tmpZip)
-	if err != nil {
-		http.Error(w, "Erro ao criar zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	zw := zip.NewWriter(zf)
-
-	if err := addFileToZip(zw, tmpDB, "data/copa.db"); err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao incluir banco no zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := filepath.WalkDir(h.uploadsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(h.uploadsDir, path)
-		if err != nil {
-			return err
-		}
-		return addFileToZip(zw, path, filepath.ToSlash(filepath.Join("uploads", rel)))
-	}); err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao incluir fotos no zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	setting, _ := h.store.GetSetting()
-	total, _ := h.store.CountActiveParticipants()
-	manifest, err := zw.Create("manifest.txt")
-	if err != nil {
-		zw.Close() //nolint:errcheck
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao criar manifesto: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	fmt.Fprintf(manifest, "Copa de Figurinhas backup completo\n")
-	fmt.Fprintf(manifest, "created_at=%s\n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(manifest, "base_url=%s\n", setting.BaseURL)
-	fmt.Fprintf(manifest, "active_participants=%d\n", total)
-	fmt.Fprintf(manifest, "includes=data/copa.db, uploads/\n")
-
-	if err := zw.Close(); err != nil {
-		zf.Close() //nolint:errcheck
-		http.Error(w, "Erro ao fechar zip: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := zf.Close(); err != nil {
-		http.Error(w, "Erro ao salvar zip: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1279,6 +1227,73 @@ func (h *AdminHandler) handleFullBackup(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="copa-backup-completo-%s.zip"`, stamp))
 	io.Copy(w, f) //nolint:errcheck
+}
+
+// WriteFullBackup grava um backup COMPLETO em dstZip: um snapshot consistente do
+// banco (em data/copa.db), TODAS as fotos de uploads/ e um manifest.txt. É usado
+// tanto no download manual quanto nos backups automáticos, para que as fotos
+// (figurinhas geradas pela IA, insubstituíveis) nunca fiquem de fora da rede de
+// segurança. Em caso de erro, remove o zip parcial.
+func WriteFullBackup(store *service.Store, uploadsDir, dstZip string) error {
+	tmpDB := dstZip + ".dbtmp"
+	defer os.Remove(tmpDB)
+	if err := store.BackupTo(tmpDB); err != nil {
+		return fmt.Errorf("snapshot do banco: %w", err)
+	}
+
+	zf, err := os.Create(dstZip)
+	if err != nil {
+		return err
+	}
+	// fail fecha tudo e descarta o zip parcial, para nunca deixar um backup truncado.
+	fail := func(err error) error {
+		zf.Close()        //nolint:errcheck
+		os.Remove(dstZip) //nolint:errcheck
+		return err
+	}
+	zw := zip.NewWriter(zf)
+
+	if err := addFileToZip(zw, tmpDB, "data/copa.db"); err != nil {
+		zw.Close() //nolint:errcheck
+		return fail(fmt.Errorf("incluir banco no zip: %w", err))
+	}
+	if uploadsDir != "" {
+		if err := filepath.WalkDir(uploadsDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(uploadsDir, path)
+			if err != nil {
+				return err
+			}
+			return addFileToZip(zw, path, filepath.ToSlash(filepath.Join("uploads", rel)))
+		}); err != nil {
+			zw.Close() //nolint:errcheck
+			return fail(fmt.Errorf("incluir fotos no zip: %w", err))
+		}
+	}
+
+	setting, _ := store.GetSetting()
+	total, _ := store.CountActiveParticipants()
+	manifest, err := zw.Create("manifest.txt")
+	if err != nil {
+		zw.Close() //nolint:errcheck
+		return fail(fmt.Errorf("criar manifesto: %w", err))
+	}
+	fmt.Fprintf(manifest, "Copa de Figurinhas backup completo\n")
+	fmt.Fprintf(manifest, "created_at=%s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(manifest, "base_url=%s\n", setting.BaseURL)
+	fmt.Fprintf(manifest, "active_participants=%d\n", total)
+	fmt.Fprintf(manifest, "includes=data/copa.db, uploads/\n")
+
+	if err := zw.Close(); err != nil {
+		return fail(fmt.Errorf("fechar zip: %w", err))
+	}
+	if err := zf.Close(); err != nil {
+		os.Remove(dstZip) //nolint:errcheck
+		return fmt.Errorf("salvar zip: %w", err)
+	}
+	return nil
 }
 
 func addFileToZip(zw *zip.Writer, srcPath, dstName string) error {
@@ -1401,6 +1416,30 @@ func (h *AdminHandler) handleCards(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleCardsReal renderiza as figurinhas em tamanho real (≈ Panini): quatro
+// figurinhas retrato num grid 2x2 por folha 10x15 (retrato, 100x150mm), com uma
+// borda branca de segurança embutida para a impressora não cortar a foto.
+// Cada folha tem sempre 4 células — as sobras vêm como nil (célula vazia).
+func (h *AdminHandler) handleCardsReal(w http.ResponseWriter, r *http.Request) {
+	participants, _ := h.store.ListActiveParticipants()
+
+	// Agrupa de 4 em 4; cada folha sempre com 4 células (nil = vazia).
+	const perSheet = 4
+	var sheets [][]*model.Participant
+	for i := 0; i < len(participants); i += perSheet {
+		sheet := make([]*model.Participant, perSheet)
+		for j := 0; j < perSheet && i+j < len(participants); j++ {
+			sheet[j] = participants[i+j]
+		}
+		sheets = append(sheets, sheet)
+	}
+
+	h.tmpl.Render(w, "admin_cards_real.html", map[string]interface{}{
+		"Sheets": sheets,
+		"Total":  len(participants),
+	})
+}
+
 // ---- Sistema: diagnóstico de rede + reset + restaurar ----
 
 // localIPv4s retorna os endereços IPv4 não-loopback das interfaces ativas.
@@ -1492,7 +1531,7 @@ func latestBackupInfo(dataDir string) (string, *time.Time) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasPrefix(name, "copa-backup-") || !strings.HasSuffix(name, ".db") {
+		if !strings.HasPrefix(name, "copa-backup-") || !(strings.HasSuffix(name, ".db") || strings.HasSuffix(name, ".zip")) {
 			continue
 		}
 		info, err := e.Info()
@@ -1595,14 +1634,14 @@ func (h *AdminHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		h.handleSystemWithError(w, r, "Erro ao ler upload: "+err.Error())
 		return
 	}
-	file, _, ferr := r.FormFile("backup")
+	file, header, ferr := r.FormFile("backup")
 	if ferr != nil {
-		h.handleSystemWithError(w, r, "Selecione um arquivo de backup (.db).")
+		h.handleSystemWithError(w, r, "Selecione um arquivo de backup (.db ou .zip).")
 		return
 	}
 	defer file.Close()
 
-	tmp := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-%d.db", time.Now().UnixNano()))
+	tmp := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-%d.tmp", time.Now().UnixNano()))
 	dst, err := os.Create(tmp)
 	if err != nil {
 		h.handleSystemWithError(w, r, "Erro ao salvar upload: "+err.Error())
@@ -1616,13 +1655,101 @@ func (h *AdminHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RestoreFrom(tmp); err != nil {
+	// Backup completo (.zip): restaura banco E fotos. Backup simples (.db): so o banco.
+	if strings.HasSuffix(strings.ToLower(header.Filename), ".zip") || isZipFile(tmp) {
+		if err := h.restoreFullZip(tmp); err != nil {
+			h.handleSystemWithError(w, r, "Erro ao restaurar: "+err.Error())
+			return
+		}
+	} else if err := h.store.RestoreFrom(tmp); err != nil {
 		h.handleSystemWithError(w, r, "Erro ao restaurar: "+err.Error())
 		return
 	}
 
 	h.broadcastRanking()
 	http.Redirect(w, r, "/admin/sistema?restored=1", http.StatusSeeOther)
+}
+
+// restoreFullZip restaura um backup completo (gerado por WriteFullBackup):
+// substitui o banco pelo data/copa.db de dentro do zip e repõe as fotos de
+// uploads/ (sobrescrevendo as atuais). Caminhos suspeitos (zip-slip) são ignorados.
+func (h *AdminHandler) restoreFullZip(zipPath string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("abrir zip: %w", err)
+	}
+	defer zr.Close()
+
+	// 1) Banco: obrigatorio.
+	var dbFile *zip.File
+	for _, f := range zr.File {
+		if f.Name == "data/copa.db" {
+			dbFile = f
+			break
+		}
+	}
+	if dbFile == nil {
+		return fmt.Errorf("o zip não contém data/copa.db (não parece um backup completo do Copa)")
+	}
+	tmpDB := filepath.Join(h.dataDir, fmt.Sprintf("copa-restore-db-%d.db", time.Now().UnixNano()))
+	defer os.Remove(tmpDB)
+	if err := extractZipFile(dbFile, tmpDB); err != nil {
+		return fmt.Errorf("extrair banco: %w", err)
+	}
+	if err := h.store.RestoreFrom(tmpDB); err != nil {
+		return err
+	}
+
+	// 2) Fotos: repoe uploads/ (sobrescreve as atuais).
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() || !strings.HasPrefix(f.Name, "uploads/") {
+			continue
+		}
+		rel := strings.TrimPrefix(f.Name, "uploads/")
+		clean := filepath.Clean(rel)
+		if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+			continue // zip-slip: ignora caminhos para fora de uploads/
+		}
+		target := filepath.Join(h.uploadsDir, clean)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("criar pasta de fotos: %w", err)
+		}
+		if err := extractZipFile(f, target); err != nil {
+			return fmt.Errorf("extrair foto %s: %w", f.Name, err)
+		}
+	}
+	return nil
+}
+
+// isZipFile detecta um zip pela assinatura "PK\x03\x04" (caso o nome do upload
+// nao tenha a extensao .zip).
+func isZipFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var sig [4]byte
+	if _, err := io.ReadFull(f, sig[:]); err != nil {
+		return false
+	}
+	return sig[0] == 'P' && sig[1] == 'K' && sig[2] == 0x03 && sig[3] == 0x04
+}
+
+// extractZipFile grava o conteudo de uma entrada do zip em dst.
+func extractZipFile(f *zip.File, dst string) error {
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, rc) //nolint:gosec // backup do proprio operador, em maquina local
+	return err
 }
 
 // handleSystemWithError re-renderiza a página de sistema com uma mensagem de erro.

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"copa/internal/db"
@@ -63,9 +65,14 @@ func TestCleanOldBackupsKeepsLastFive(t *testing.T) {
 	}
 }
 
-// backupDB gera um arquivo de backup a partir de um store real.
-func TestBackupDBCreatesFile(t *testing.T) {
+// backupFull gera um backup COMPLETO (banco + fotos) como copa-backup-*.zip.
+func TestBackupFullCreatesZip(t *testing.T) {
 	dir := t.TempDir()
+	uploads := t.TempDir()
+	// Uma foto qualquer em uploads/ para garantir que ela entra no zip.
+	if err := os.WriteFile(filepath.Join(uploads, "foto1.jpg"), []byte("jpeg"), 0644); err != nil {
+		t.Fatalf("write foto: %v", err)
+	}
 	database, err := db.Open(dir)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -73,21 +80,80 @@ func TestBackupDBCreatesFile(t *testing.T) {
 	defer database.Close()
 	store := service.NewStore(database)
 
-	backupDB(store, dir)
+	backupFull(store, dir, uploads)
 
 	entries, _ := os.ReadDir(dir)
-	var found bool
+	var zipPath string
 	for _, e := range entries {
-		if matchesBackupName(e.Name()) {
-			found = true
+		if matchesBackupName(e.Name()) && strings.HasSuffix(e.Name(), ".zip") {
+			zipPath = filepath.Join(dir, e.Name())
 		}
 	}
-	if !found {
-		t.Fatalf("backupDB deveria criar um arquivo copa-backup-*.db em %s", dir)
+	if zipPath == "" {
+		t.Fatalf("backupFull deveria criar um copa-backup-*.zip em %s", dir)
+	}
+
+	// O zip deve conter o banco e a foto.
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("abrir zip: %v", err)
+	}
+	defer zr.Close()
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["data/copa.db"] {
+		t.Errorf("zip deveria conter data/copa.db; tem %v", names)
+	}
+	if !names["uploads/foto1.jpg"] {
+		t.Errorf("zip deveria conter as fotos de uploads/; tem %v", names)
 	}
 }
 
-// matchesBackupName espelha o filtro usado por cleanOldBackups.
-func matchesBackupName(name string) bool {
-	return len(name) > 12 && name[:5] == "copa-" && name[len(name)-3:] == ".db"
+// Arquivos temporarios de download/restore (copa-download-*, copa-restore-*) que
+// sobraram apos um crash NAO devem contar como backup nem causar a exclusao dos
+// backups reais.
+func TestCleanOldBackupsIgnoresTempFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	var realBackups []string
+	for i := 1; i <= 5; i++ {
+		name := fmt.Sprintf("copa-backup-202606%02d-120000.db", i)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		realBackups = append(realBackups, name)
+	}
+	// Temporarios com nomes UnixNano (numeros grandes) que ficariam "no fim" numa
+	// ordenacao por nome — antes empurrariam os backups reais para fora dos 5.
+	temps := []string{
+		"copa-download-1717000000000000000.db",
+		"copa-restore-1717000000000000001.db",
+		"copa-full-db-1717000000000000002.db",
+	}
+	for _, name := range temps {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	cleanOldBackups(dir)
+
+	entries, _ := os.ReadDir(dir)
+	present := map[string]bool{}
+	for _, e := range entries {
+		present[e.Name()] = true
+	}
+	for _, name := range realBackups {
+		if !present[name] {
+			t.Fatalf("backup real %s nao deveria ter sido removido", name)
+		}
+	}
+	// Os temporarios sao ignorados por cleanOldBackups (continuam intactos).
+	for _, name := range temps {
+		if !present[name] {
+			t.Fatalf("arquivo temporario %s nao deveria ser tocado por cleanOldBackups", name)
+		}
+	}
 }
